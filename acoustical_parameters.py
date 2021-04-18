@@ -2,22 +2,29 @@
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, sosfilt
+from scipy.signal import butter, sosfilt, medfilt
 
 
 
-def parameters(file_path, b=1, truncate=None):
+def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
     
     
     #Load Impulse Response file
     IR_raw, fs = sf.read(file_path)
+
+    #Start at peak of impulse
+    IR_raw = IR_raw[np.argmax(IR_raw):]
     
     #Define band index array
     if b == 3:
         band_idx = np.arange(-16, 14)
-    else:
+    elif b == 1:
         band_idx = np.arange(-5, 5)
+    else:
+        print('invalid b')
     
+    ETC = []
+    decay = []
     T10 = []
     T20 = []
     T30 = []
@@ -26,20 +33,49 @@ def parameters(file_path, b=1, truncate=None):
     IACCe = []
     Tt = []
     EDTt = []
-    
+
     
     for idx in band_idx:
         #Band limits
         f_low, f_high = limits_iec_61260(idx, b)
         #Apply bandpass filter
         IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
+        #Square (obtain Energy Time Curve ETC)
+        ETC_band = IR_filtered ** 2
+        
+        
+        
+        #Normalize
+        #ETC_band = ETC_band / np.max(ETC_band)
+        
+        
+        #Truncate
+        if truncate == 'lundeby':
+            ETC_band = lundeby(ETC_band)
+        elif truncate != None:
+            print('invalid truncate')
+        
+        #Smoothing
+        if smoothing == 'schroeder':
+            decay_band = schroeder(ETC_band)
+        elif smoothing == 'median':
+            decay_band = median_filter(ETC_band, f_low, fs)
+        else:
+            print('invalid smoothing')
+        
+        
         #Append parameters to lists
-        C50.append(C50_from_IR(IR_filtered))
-        C80.append(C80_from_IR(IR_filtered))
-        IACCe.append(IACCe_from_IR(IR_filtered)
+        #A los parámetros que no requieran la integración,  se les puede
+        #pasar directamente ETC_band o IR_filtered. Hay que ver qué onda
+        #para IACCe
+        ETC.append(ETC_band)     
+        decay.append(decay_band)
+        #C50.append(C50_from_IR(decay_band))
+        #C80.append(C80_from_IR(decay_band))
         #etc...
     
-    return T10, T20, T30, C50, C80, IACCe, Tt, EDTt
+    return ETC, decay
+    #return T10, T20, T30, C50, C80, IACCe, Tt, EDTt
         
         
     
@@ -120,12 +156,30 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 
-def _Lundeby(IR):
-    pass
+def lundeby(ETC):
+    return ETC
+    
 
-def _Schroeder(IR):
-    pass
+def schroeder(ETC):
+    # Schroeder integration
+    sch = np.cumsum(ETC[::-1])[::-1]
+    # dB scale, normalize
+    sch = 10.0 * np.log10(sch / np.max(sch))
+    return sch
 
-def _movingMedian(IR):
-    pass
+def median_filter(ETC, f, fs):
+    #No sé qué hacer con la ventana. Tiene que ser impar
+    median_window = 1501 #para 32 Hz
+    # median_window = round(1 / f * fs)
+    # if median_window % 2 == 0:
+    #     median_window += 1
+    # if median_window < 3:
+    #     median_window = 3
+    
+    #Median filter
+    med = medfilt(ETC, median_window)
+    #dB scale, normalize
+    med = 10*np.log10(med / np.max(med))
+    
+    return med
 
