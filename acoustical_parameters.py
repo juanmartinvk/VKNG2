@@ -3,6 +3,7 @@
 import numpy as np
 import soundfile as sf
 from scipy.signal import butter, sosfilt, medfilt
+from statistics import mean
 
 
 
@@ -23,6 +24,12 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
     else:
         print('invalid b')
     
+    #Define window times for moving average filters (between 10 and 50 ms) for each band
+
+    maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
+    maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
+
+    
     ETC = []
     decay = []
     T10 = []
@@ -34,7 +41,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
     Tt = []
     EDTt = []
 
-    
+    maf_window_idx = 0
     for idx in band_idx:
         #Band limits
         f_low, f_high = limits_iec_61260(idx, b)
@@ -44,24 +51,26 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         ETC_band = IR_filtered ** 2
         
         
-        
         #Normalize
-        #ETC_band = ETC_band / np.max(ETC_band)
+        ETC_band = ETC_band / np.max(ETC_band)
         
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_band = lundeby(ETC_band)
-        elif truncate != None:
+            ETC_truncated = lundeby(ETC_band, maf_windows[maf_window_idx])
+        elif truncate is None:
+            ETC_truncated = ETC_band
+        else:
             print('invalid truncate')
         
         #Smoothing
         if smoothing == 'schroeder':
-            decay_band = schroeder(ETC_band)
+            decay_band = schroeder(ETC_truncated)
         elif smoothing == 'median':
-            decay_band = median_filter(ETC_band, f_low, fs)
+            decay_band = median_filter(ETC_truncated, f_low, fs)
         else:
             print('invalid smoothing')
+
         
         
         #Append parameters to lists
@@ -73,7 +82,9 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         #C50.append(C50_from_IR(decay_band))
         #C80.append(C80_from_IR(decay_band))
         #etc...
-    
+        
+        maf_window_idx += 1
+        
     return ETC, decay
     #return T10, T20, T30, C50, C80, IACCe, Tt, EDTt
         
@@ -156,8 +167,17 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 
-def lundeby(ETC):
-    return ETC
+def lundeby(ETC, maf_window):
+    # 1) Moving average filter, window from 10 to 50ms
+
+    ETC_averaged = moving_average(ETC, maf_window)
+    
+    # 2) Estimate noise level with last 10% of the signal
+    #estimated_noise = np.mean()
+    
+    
+    return ETC_averaged
+    
     
 
 def schroeder(ETC):
@@ -169,17 +189,23 @@ def schroeder(ETC):
 
 def median_filter(ETC, f, fs):
     #No sé qué hacer con la ventana. Tiene que ser impar
-    median_window = 1501 #para 32 Hz
-    # median_window = round(1 / f * fs)
-    # if median_window % 2 == 0:
-    #     median_window += 1
-    # if median_window < 3:
-    #     median_window = 3
+    window = 1501 #para 32 Hz
+    # window = round(1 / f * fs)
+    # if window % 2 == 0:
+    #     window += 1
+    # if window < 3:
+    #     window = 3
     
     #Median filter
-    med = medfilt(ETC, median_window)
+    med = medfilt(ETC, window)
     #dB scale, normalize
     med = 10*np.log10(med / np.max(med))
     
     return med
+
+def moving_average(ETC, window):    
+    ETC_padded = np.pad(ETC, (window//2, window-1-window//2), mode='edge') #Pad with edge values
+    ETC_averaged = np.convolve(ETC_padded, np.ones((window,))/window, mode='valid') #Moving average filter
+
+    return ETC_averaged
 
