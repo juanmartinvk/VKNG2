@@ -3,6 +3,7 @@
 import numpy as np
 import soundfile as sf
 from scipy.signal import butter, sosfilt, medfilt
+from scipy.stats import linregress
 from statistics import mean
 
 
@@ -15,6 +16,8 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
 
     #Start at peak of impulse
     IR_raw = IR_raw[np.argmax(IR_raw):]
+    
+
     
     #Define band index array
     if b == 3:
@@ -132,6 +135,8 @@ def bandpass(IR, f_low, f_high, fs):
 
     """
     nyq = 0.5 * fs
+    if f_high >= nyq:
+        f_high = nyq-1
     low = f_low / nyq
     high = f_high / nyq
     sos = butter(4, [low, high], btype="band", output="sos")    
@@ -168,15 +173,30 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 def lundeby(ETC, maf_window):
+    dB_to_noise = 7 # dB above noise for linear regression
+    
     # 1) Moving average filter, window from 10 to 50ms
 
     ETC_averaged = moving_average(ETC, maf_window)
+    ETC_avg_dB = 10 * np.log10(ETC_averaged)
     
     # 2) Estimate noise level with last 10% of the signal
-    #estimated_noise = np.mean()
+    noise_estimate = 10 * np.log10( np.mean(ETC_averaged[-int(ETC_averaged.size/10):]) )
+    
+    # 3) Estimate preliminar slope and crossing point
+    stop_idx = np.where(ETC_avg_dB >= noise_estimate + dB_to_noise)[0][-1]
+    x = np.arange(stop_idx)
+    lin_reg = linregress(x, ETC_avg_dB[:stop_idx])
+    line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
+    crossing_point = np.argmin(np.abs(line - noise_estimate))
     
     
-    return ETC_averaged
+
+    
+    
+    
+    
+    return ETC_averaged, noise_estimate, lin_reg
     
     
 
