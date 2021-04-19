@@ -60,7 +60,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_truncated = lundeby(ETC_band, maf_windows[maf_window_idx])
+            ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[maf_window_idx])
         elif truncate is None:
             ETC_truncated = ETC_band
         else:
@@ -68,7 +68,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         
         #Smoothing
         if smoothing == 'schroeder':
-            decay_band = schroeder(ETC_truncated)
+            decay_band = schroeder(ETC_truncated, len(ETC_band)-crossing_point)
         elif smoothing == 'median':
             decay_band = median_filter(ETC_truncated, f_low, fs)
         else:
@@ -193,18 +193,21 @@ def lundeby(ETC, maf_window):
     
 
     
+    #Truncate
+    ETC_truncated = ETC[:crossing_point]
     
-    
-    
-    return ETC_averaged, noise_estimate, lin_reg
-    
+    #return ETC_averaged, noise_estimate, lin_reg
+    return ETC_truncated, crossing_point
     
 
-def schroeder(ETC):
+def schroeder(ETC, pad):
     # Schroeder integration
     sch = np.cumsum(ETC[::-1])[::-1]
+    # Pad with zeros for same array length
+    sch = np.concatenate((sch, np.zeros(pad)))    
     # dB scale, normalize
     sch = 10.0 * np.log10(sch / np.max(sch))
+
     return sch
 
 def median_filter(ETC, f, fs):
