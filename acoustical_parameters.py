@@ -5,6 +5,7 @@ import soundfile as sf
 from scipy.signal import butter, sosfilt, medfilt
 from scipy.stats import linregress
 from statistics import mean
+import matplotlib.pyplot as plt
 
 
 
@@ -32,7 +33,6 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
 
-    
     ETC = []
     decay = []
     T10 = []
@@ -60,9 +60,10 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[maf_window_idx])
+            ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[maf_window_idx], fs)
         elif truncate is None:
             ETC_truncated = ETC_band
+            crossing_point = len(ETC_band)
         else:
             print('invalid truncate')
         
@@ -172,8 +173,11 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 
-def lundeby(ETC, maf_window):
+def lundeby(ETC, maf_window, fs):
     dB_to_noise = 7 # dB above noise for linear regression
+    interval_density = 5 #number of time intervals per each 10 dB of dynamic range
+    idx_last_10percent = -int(ETC.size/10) #start index of last 10% of signal
+    late_dyn_range = 20 # Dynamic range to be used for late decay slope estimation
     
     # 1) Moving average filter, window from 10 to 50ms
 
@@ -181,22 +185,71 @@ def lundeby(ETC, maf_window):
     ETC_avg_dB = 10 * np.log10(ETC_averaged)
     
     # 2) Estimate noise level with last 10% of the signal
-    noise_estimate = 10 * np.log10( np.mean(ETC_averaged[-int(ETC_averaged.size/10):]) )
+    noise_estimate = 10 * np.log10( np.mean(ETC_averaged[idx_last_10percent:]) )
+
     
-    # 3) Estimate preliminar slope and crossing point
-    stop_idx = np.where(ETC_avg_dB >= noise_estimate + dB_to_noise)[0][-1]
-    x = np.arange(stop_idx)
-    lin_reg = linregress(x, ETC_avg_dB[:stop_idx])
+    # 3) Estimate preliminar slope
+    idx_stop = np.where(ETC_avg_dB >= noise_estimate + dB_to_noise)[0][-1]
+    x = np.arange(idx_stop)
+    #Linear regression
+    lin_reg = linregress(x, ETC_avg_dB[:idx_stop])
     line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
+    
+    # 4) Find preliminar crossing point
     crossing_point = np.argmin(np.abs(line - noise_estimate))
     
+    # 5) Calculate new interval length for moving average filter
+    dyn_range = lin_reg.intercept-noise_estimate
+    interval_num = np.intc(interval_density * dyn_range / 10)
+    new_window = np.intc(idx_stop / interval_num)
     
+    # 6) Moving average filter with new window
+    ETC_averaged = moving_average(ETC, new_window)
+    ETC_avg_dB = 10 * np.log10(ETC_averaged)
+    
+    # Iterate through steps 7), 8) and 9) until convergence
+    crossing_point_old = crossing_point + 1000
+    counter = 0
+    
+    
+    while np.abs(crossing_point - crossing_point_old) > 0.001*fs:   #While difference in crossing points is larger than 1 ms
+        #plt.plot(line)        
+        crossing_point_old = crossing_point
+        
+        # 7) Estimate background noise level    
+        #Allow a safety margin from crosspoint corresponding to 5-10 dB decay, but use a minimum of 10% of the impulse response.
+        idx_10dB_below_crosspoint = np.argmin(np.abs(line - noise_estimate - 10))
+        if idx_10dB_below_crosspoint >= idx_last_10percent:
+            noise_estimate = 10 * np.log10(np.mean(ETC_averaged[idx_last_10percent:]))
+        else:
+            noise_estimate = 10 * np.log10(np.mean(ETC_averaged[idx_10dB_below_crosspoint:]))
+        
+        # 8) Estimate late decay slope
+        # A dynamic range of 10-20 dB should be evaluated, starting 5-10 dB above the noise level.
+        
+        idx_start = np.argmin(np.abs(line - (noise_estimate + dB_to_noise + late_dyn_range) ))
+        idx_stop = np.argmin(np.abs(line - (noise_estimate + dB_to_noise) ))
 
+        #Linear regression
+        x = np.arange(idx_start, idx_stop)
+        lin_reg = linregress(x, ETC_avg_dB[idx_start:idx_stop])
+        line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
+
+        # 9) Find new crosspoint
+        crossing_point = np.argmin(np.abs(line - noise_estimate))
+        if counter > 30:
+            print('Could not achieve convergence. Abort!')
+            break
+        
+        counter += 1
+                                           
+    #print(counter)
     
     #Truncate
     ETC_truncated = ETC[:crossing_point]
     
     #return ETC_averaged, noise_estimate, lin_reg
+    #return line, noise_estimate
     return ETC_truncated, crossing_point
     
 
@@ -204,9 +257,11 @@ def schroeder(ETC, pad):
     # Schroeder integration
     sch = np.cumsum(ETC[::-1])[::-1]
     # Pad with zeros for same array length
-    sch = np.concatenate((sch, np.zeros(pad)))    
+    sch = np.concatenate((sch, np.zeros(pad)))  
     # dB scale, normalize
-    sch = 10.0 * np.log10(sch / np.max(sch))
+    with np.errstate(divide='ignore'): #ignore divide by zero warning
+        sch = 10.0 * np.log10(sch / np.max(sch))
+    
 
     return sch
 
