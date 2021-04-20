@@ -35,7 +35,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
 
     ETC = []
     decay = []
-    T10 = []
+    EDT = []
     T20 = []
     T30 = []
     C50 = []
@@ -83,32 +83,124 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         #para IACCe
         ETC.append(ETC_band)     
         decay.append(decay_band)
-        #C50.append(C50_from_IR(decay_band))
-        #C80.append(C80_from_IR(decay_band))
+        EDT.append(EDT_from_IR(decay_band, fs))
+        T20.append(T20_from_IR(decay_band, fs))
+        T30.append(T30_from_IR(decay_band, fs))
+        C50.append(C50_from_IR(fs, ETC_band))
+        C80.append(C80_from_IR(fs, ETC_band))
+       
+       
+       
         #etc...
         
         maf_window_idx += 1
         
-    return ETC, decay
-    #return T10, T20, T30, C50, C80, IACCe, Tt, EDTt
+    return ETC, decay, EDT, T20, T30, C50, C80
+    #return  IACCe, Tt, EDTt
         
         
     
 
 
-def RT_from_IR(IR, truncate):
-    """ 
+def EDT_from_IR(signal, fs):
+# signal is the smoothed and truncated IR
 
-    """
-    pass
+    init=0
+    end=-10
+    factor=6
+ 
+    s_init = np.argmin(np.abs(signal - init))
+    s_end = np.argmin(np.abs(signal-end))
+    
+    #cut signal
+    signal=signal[s_init:s_end]      
+    
+    t = np.arange(s_init, s_end) / fs
+    y=signal
+   
+    # Linear regression
+    slope, intercept =np.polyfit(t,y,1)
+    # EDT_aprox=np.polyval([slope, intercept],t)  #recta
+
+    init_value=(init-intercept)/slope
+    end_value=(end-intercept)/slope
+    
+    EDT= factor * (end_value-init_value)
+    
+    return EDT
+
+def T20_from_IR(signal, fs):
+# signal is the smoothed and truncated IR
+
+    init=-5
+    end=-25
+    factor=3
+ 
+    s_init = np.argmin(np.abs(signal - init))
+    s_end = np.argmin(np.abs(signal-end))
+    
+    #cut signal
+    signal=signal[s_init:s_end]      
+    
+    t = np.arange(s_init, s_end) / fs
+    y=signal
+   
+    # Linear regression
+    slope, intercept =np.polyfit(t,y,1)
+    # T20_aprox=np.polyval([slope, intercept],t)  #recta
+
+    init_value=(init-intercept)/slope
+    end_value=(end-intercept)/slope
+    
+    T20= factor * (end_value-init_value)
+    
+    return T20
 
 
 
-def C50_from_IR(IR):
-    pass
+def T30_from_IR(signal, fs):
+# signal is the smoothed and truncated IR
 
-def C80_from_IR(IR):
-    pass
+    init=-5
+    end=-35
+    factor=2
+ 
+    s_init = np.argmin(np.abs(signal - init))
+    s_end = np.argmin(np.abs(signal-end))
+    
+    #cut signal
+    signal=signal[s_init:s_end]      
+    
+    t = np.arange(s_init, s_end) / fs
+    y=signal
+   
+    # Linear regression
+    slope, intercept =np.polyfit(t,y,1)
+    # T30_aprox=np.polyval([slope, intercept],t)  #recta
+
+    init_value=(init-intercept)/slope
+    end_value=(end-intercept)/slope
+    
+    T30= factor * (end_value-init_value)
+    
+    return T30
+
+
+def C50_from_IR(fs, ETC):
+    
+    t = int(0.05 * fs + 1) # 50ms samples
+    C50= 10.0 * np.log10((np.sum(ETC[:t]) / np.sum(ETC[t:])))
+    
+    return C50 
+
+
+
+def C80_from_IR(fs, ETC):
+    
+    t = int(0.08 * fs + 1) # 80ms samples
+    C80= 10.0 * np.log10((np.sum(ETC[:t]) / np.sum(ETC[t:])))
+    
+    return C80 
 
 def IACCe_from_IR(IR):
     pass
