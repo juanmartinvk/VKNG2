@@ -1,19 +1,17 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-import soundfile as sf
 from scipy.signal import butter, sosfilt, medfilt
 from scipy.stats import linregress
-from statistics import mean
-import matplotlib.pyplot as plt
 
 
 
-def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
+
+def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     
     
-    #Load Impulse Response file
-    IR_raw, fs = sf.read(file_path)
+    # #Load Impulse Response file
+    # IR_raw, fs = sf.read(file_path)
 
     #Start at peak of impulse
     IR_raw = IR_raw[np.argmax(IR_raw):]
@@ -35,7 +33,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
 
-    ETC = []
+    ETC_avg_dB = []
     decay = []
     EDT = []
     T20 = []
@@ -54,18 +52,17 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
         #Square (obtain Energy Time Curve ETC)
         ETC_band = IR_filtered ** 2
-        
-        
         #Normalize
         ETC_band = ETC_band / np.max(ETC_band)
         
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
+            ETC_avg_dB_band, ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
         elif truncate is None:
+            ETC_avg_dB = 10*np.log10(moving_average(ETC, maf_windows[counter]))
             ETC_truncated = ETC_band
-            crossing_point = len(ETC_band)
+            crossing_point = ETC_band.size
         else:
             print('invalid truncate')
         
@@ -81,7 +78,7 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         
         #Append parameters to lists
 
-        ETC.append(ETC_band)     
+        ETC_avg_dB.append(ETC_avg_dB_band)     
         decay.append(decay_band)
         EDT.append(EDT_from_IR(decay_band, fs))
         T20.append(T20_from_IR(decay_band, fs))
@@ -94,8 +91,14 @@ def parameters(file_path, b=1, truncate=None, smoothing='schroeder'):
         #etc...
         
         counter += 1
-        
-    return ETC, decay, EDT, T20, T30, C50, C80
+    
+    EDT = np.round(EDT, decimals=2)
+    T20 = np.round(T20, decimals=2)
+    T30 = np.round(T30, decimals=2)
+    C50 = np.round (C50, decimals=2)
+    C80 = np.round(C80, decimals=2)
+    
+    return ETC_avg_dB, decay, EDT, T20, T30, C50, C80
     #return  IACCe, Tt, EDTt
         
         
@@ -354,7 +357,7 @@ def lundeby(ETC, maf_window, band, fs):
     
     #return ETC_averaged, noise_estimate, lin_reg
     #return line, noise_estimate
-    return ETC_truncated, crossing_point
+    return ETC_avg_dB, ETC_truncated, crossing_point
     
 
 def schroeder(ETC, pad):
