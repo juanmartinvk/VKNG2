@@ -389,7 +389,6 @@ def median_filter(ETC, f, fs):
     med = medfilt(ETC, window)
     #dB scale, normalize
     med = 10*np.log10(med / np.max(med))
-    print(np.where(med == 0))
     
     return med
 
