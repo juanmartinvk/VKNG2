@@ -12,7 +12,7 @@ from PyQt5.QtWidgets import QMainWindow, QDialog, QApplication
 file_path = "IR_test/IR_test_mono.wav"
 IR_raw, fs = sf.read(file_path)
 b = 1
-ETC_avg_dB, decay, EDT, T20, T30, C50, C80 = ap.parameters(IR_raw, fs, b=b, truncate='lundeby')
+param = ap.parameters(IR_raw, fs, b=b, truncate='lundeby', smoothing='schroeder')
 
 
 if b == 3:
@@ -33,9 +33,7 @@ class MainWindow(QMainWindow):
         # self.paramTable.setColumnWidth(1,100)
         # self.paramTable.setColumnWidth(2,350)
         self.setWindowTitle("Acoustical Parameters")
-        self.graphWidget.setBackground('w')
-        
-        
+        self.graphWidget.setBackground('w')        
         self.loadData()
         self.plotData()
 
@@ -45,16 +43,16 @@ class MainWindow(QMainWindow):
         self.paramTable.setHorizontalHeaderLabels(nominal_bands)
         
         for idx, band in enumerate(nominal_bands):
-             self.paramTable.setItem(0, idx, QtWidgets.QTableWidgetItem(str(EDT[idx])))
-             self.paramTable.setItem(1, idx, QtWidgets.QTableWidgetItem(str(T20[idx])))
-             self.paramTable.setItem(2, idx, QtWidgets.QTableWidgetItem(str(T30[idx])))
-             self.paramTable.setItem(3, idx, QtWidgets.QTableWidgetItem(str(C50[idx])))
-             self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(C80[idx])))
+             self.paramTable.setItem(0, idx, QtWidgets.QTableWidgetItem(str(param.EDT[idx])))
+             self.paramTable.setItem(1, idx, QtWidgets.QTableWidgetItem(str(param.T20[idx])))
+             self.paramTable.setItem(2, idx, QtWidgets.QTableWidgetItem(str(param.T30[idx])))
+             self.paramTable.setItem(3, idx, QtWidgets.QTableWidgetItem(str(param.C50[idx])))
+             self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(param.C80[idx])))
              self.paramTable.setColumnWidth(idx,35)
     
     def plotData(self):
-        self.graphWidget.plot(ETC_avg_dB[7], pen='b')
-        self.graphWidget.plot(decay[7], pen='r')
+        self.graphWidget.plot(param.ETC_avg_dB[7], pen='b')
+        self.graphWidget.plot(param.decay[7], pen='r')
              
 
 
