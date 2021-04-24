@@ -4,15 +4,29 @@ import numpy as np
 from scipy.signal import butter, sosfilt, medfilt
 from scipy.stats import linregress
 
+class AcParam:
+    def __init__(self):
+        self.ETC = []
+        self.ETC_dB = []
+        self.ETC_avg_dB = []
+        self.ETC_truncated = []
+        self.decay = []
+        self.EDT = []
+        self.T20 = []
+        self.T30 = []
+        self.C50 = []
+        self.C80 = []
+        self.Tt = []
+        self.EDTt = []
+        self.b = 1
+        self.crossing_point = []
 
 
 
 def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     
+    param = AcParam()
     
-    # #Load Impulse Response file
-    # IR_raw, fs = sf.read(file_path)
-
     #Start at peak of impulse
     IR_raw = IR_raw[np.argmax(IR_raw):]
     
@@ -33,16 +47,6 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
 
-    ETC_avg_dB = []
-    decay = []
-    EDT = []
-    T20 = []
-    T30 = []
-    C50 = []
-    C80 = []
-    IACCe = []
-    Tt = []
-    EDTt = []
 
     counter = 0
     for idx in band_idx:
@@ -55,12 +59,15 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         #Normalize
         ETC_band = ETC_band / np.max(ETC_band)
         
+        #dB and average (only for graph)
+        ETC_dB_band = 10*np.log10(ETC_band/np.max(ETC_band))
+        ETC_avg_dB_band = 10*np.log10(moving_average(ETC_band/np.max(ETC_band), 240))
+        
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_avg_dB_band, ETC_truncated, crossing_point = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
+            ETC_truncated_band, crossing_point_band = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
         elif truncate is None:
-            ETC_avg_dB = 10*np.log10(moving_average(ETC, maf_windows[counter]))
             ETC_truncated = ETC_band
             crossing_point = ETC_band.size
         else:
@@ -68,38 +75,40 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         
         #Smoothing
         if smoothing == 'schroeder':
-            decay_band = schroeder(ETC_truncated, len(ETC_band)-crossing_point)
+            decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
         elif smoothing == 'median':
-            decay_band = median_filter(ETC_truncated, f_low, fs)
+            decay_band = median_filter(ETC_truncated_band, f_low, fs)
         else:
             print('invalid smoothing')
 
         
         
         #Append parameters to lists
-
-        ETC_avg_dB.append(ETC_avg_dB_band)     
-        decay.append(decay_band)
-        EDT.append(EDT_from_IR(decay_band, fs))
-        T20.append(T20_from_IR(decay_band, fs))
-        T30.append(T30_from_IR(decay_band, fs))
-        C50.append(C50_from_IR(fs, ETC_band))
-        C80.append(C80_from_IR(fs, ETC_band))
+        param.crossing_point.append(crossing_point_band)
+        param.ETC.append(ETC_band)
+        param.ETC_dB.append(ETC_dB_band)
+        param.ETC_avg_dB.append(ETC_avg_dB_band)     
+        param.decay.append(decay_band)
+        param.EDT.append(EDT_from_IR(decay_band, fs))
+        param.T20.append(T20_from_IR(decay_band, fs))
+        param.T30.append(T30_from_IR(decay_band, fs))
+        param.C50.append(C50_from_IR(fs, ETC_band))
+        param.C80.append(C80_from_IR(fs, ETC_band))
        
        
-       
-        #etc...
         
         counter += 1
     
-    EDT = np.round(EDT, decimals=2)
-    T20 = np.round(T20, decimals=2)
-    T30 = np.round(T30, decimals=2)
-    C50 = np.round (C50, decimals=2)
-    C80 = np.round(C80, decimals=2)
+    #Round parameters to 2 decimals
+    param.EDT = np.round(param.EDT, decimals=2)
+    param.T20 = np.round(param.T20, decimals=2)
+    param.T30 = np.round(param.T30, decimals=2)
+    param.C50 = np.round (param.C50, decimals=2)
+    param.C80 = np.round(param.C80, decimals=2)
     
-    return ETC_avg_dB, decay, EDT, T20, T30, C50, C80
+    #return ETC_avg_dB, decay, EDT, T20, T30, C50, C80
     #return  IACCe, Tt, EDTt
+    return param
         
         
     
@@ -345,14 +354,13 @@ def lundeby(ETC, maf_window, band, fs):
         
         counter += 1
                                            
-    #print(counter)
-    
+
     #Truncate
     ETC_truncated = ETC[:crossing_point]
     
     #return ETC_averaged, noise_estimate, lin_reg
     #return line, noise_estimate
-    return ETC_avg_dB, ETC_truncated, crossing_point
+    return ETC_truncated, crossing_point
     
 
 def schroeder(ETC, pad):
@@ -363,13 +371,14 @@ def schroeder(ETC, pad):
     # dB scale, normalize
     with np.errstate(divide='ignore'): #ignore divide by zero warning
         sch = 10.0 * np.log10(sch / np.max(sch))
-    
+
 
     return sch
 
 def median_filter(ETC, f, fs):
     #No sé qué hacer con la ventana. Tiene que ser impar
-    window = 1501 #para 32 Hz
+    #window = 1501 #para 32 Hz
+    window = 1501
     # window = round(1 / f * fs)
     # if window % 2 == 0:
     #     window += 1
@@ -380,6 +389,7 @@ def median_filter(ETC, f, fs):
     med = medfilt(ETC, window)
     #dB scale, normalize
     med = 10*np.log10(med / np.max(med))
+    print(np.where(med == 0))
     
     return med
 
