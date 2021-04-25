@@ -1,71 +1,216 @@
 # -*- coding: utf-8 -*-
 import sys
 import soundfile as sf
-import numpy as np
+import ntpath
 import acoustical_parameters as ap
-import pyqtgraph as pg
-from pyqtgraph import PlotWidget
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QMainWindow, QDialog, QApplication
+from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
 
-file_path = "IR_test/IR_test_mono.wav"
-IR_raw, fs = sf.read(file_path)
-b = 1
-param = ap.parameters(IR_raw, fs, b=b, truncate='lundeby', smoothing='schroeder')
+def analyzeFile(filePath, b, smoothing="schroeder"):
+
+    # Read file
+    IR_raw, fs = sf.read(filePath)
+    IR_raw_L = IR_raw
+    IR_raw_R = None
+    
+    # Check if stereo or mono. If stereo, split channels.
+    if IR_raw.ndim == 2:
+        IR_raw_L = IR_raw[0:, 0]
+        IR_raw_R = IR_raw[0:, 1]
+    
+    # Calculate parameters
+    acParamL = ap.parameters(IR_raw_L, fs, b=b, truncate='lundeby', smoothing=smoothing)
+    if IR_raw_R is not None:
+        acParamR = ap.parameters(IR_raw_R, fs, b=b, truncate='lundeby', smoothing=smoothing)
+    else:
+        acParamR = None
+    
+    # Define nominal bands
+    if b == 3:
+        nominalBands = ['25', '31.5', '40', '50', '63', '80', '100', '125', '160',
+                         '200', '250', '315', '400', '500', '630', '800', '1k',
+                         '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
+                         '6.3k', '8k', '10k', '12.5k', '16k', '20k']
+    elif b == 1:
+        nominalBands = ['31.5', '63', '125', '250', '500',
+                         '1k', '2k', '4k', '8k', '16k']
+        
+    return acParamL, acParamR, nominalBands
 
 
-if b == 3:
-    nominal_bands = ['25', '31.5', '40', '50', '63', '80', '100', '125', '160',
-                     '200', '250', '315', '400', '500', '630', '800', '1k',
-                     '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
-                     '6.3k', '8k', '10k', '12.5k', '16k', '20k']
-elif b == 1:
-    nominal_bands = ['31.5', '63', '125', '250', '500',
-                     '1k', '2k', '4k', '8k', '16k']
-
-
-class MainWindow(QMainWindow):
+class SetupWindow(QMainWindow):
     def __init__(self):
-        super(MainWindow, self).__init__()
+        super(SetupWindow, self).__init__()
+        
+        # Load designed UI
+        loadUi("gui_setup.ui",self)
+        
+        # Defaults
+        self.octaveButton.setChecked(True)
+        self.b = 1
+        self.smoothing = "schroeder"
+        
+        # Window settings
+        self.setWindowTitle("Setup")
+        
+        # Button bindings
+        self.browseFileButton.clicked.connect(self.browseFile)
+        self.analyzeButton.clicked.connect(self.analyzeData)
+        self.cancelButton.clicked.connect(self.close)
+        self.octaveButton.toggled.connect(self.toggleOctave)
+        self.thirdOctaveButton.toggled.connect(self.toggleThirdOctave)
+    
+    def browseFile(self):
+        # Open file dialog and load path onto line edit widget
+        filePath = QFileDialog.getOpenFileName()[0]
+        self.filePathBox.setText(filePath)
+            
+    def analyzeData(self):
+        # Analyze IR file data, hide setup window and show data window
+        filePath = self.filePathBox.text()
+        if ntpath.exists(filePath):
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(filePath, self.b)
+            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
+            self.hide()
+            self.dataWindow.show()
+        else:
+            print("Invalid file path")
+        
+    def toggleOctave(self):
+        self.b = 1
+    
+    def toggleThirdOctave(self):
+        self.b = 3
+
+        
+
+class DataWindow(QMainWindow):
+    def __init__(self, paramL, paramR, nominalBands, b, smoothing="schroeder"):
+        super(DataWindow, self).__init__()
+        self.paramL = paramL
+        self.paramR = paramR
+        self.b = b
+        self.nominalBands = nominalBands
+
+        
+        # Defaults
+        self.currentParam = self.paramL
+        self.currentBandIdx = self.nominalBands.index("1k")
+        self.smoothing = smoothing
+        
+        #Load designed UI 
         loadUi("gui_main.ui",self)
-        # self.paramTable.setColumnWidth(0,250)
-        # self.paramTable.setColumnWidth(1,100)
-        # self.paramTable.setColumnWidth(2,350)
-        self.setWindowTitle("Acoustical Parameters")
-        self.graphWidget.setBackground('w')        
+        
+        #Load data to table
         self.loadData()
-        self.plotData()
+        
+        # Window preferences
+        self.setWindowTitle("Acoustical Parameters")
+        
+        # Graph settings
+        self.graphWidget.setBackground('w')   
+        self.graphWidget.addLegend(offset = (0, 10))
+        self.graphWidget.showGrid(x=True, y=True)
+        self.graphWidget.setYRange(-150, 0, padding=0)
+        self.graphWidget.setLabel("left", "[dB]")
+        self.graphWidget.setLabel("bottom", "Time [s]")
+        self.graphWidget.setTitle(self.nominalBands[self.currentBandIdx] + "Hz band")
+
+        # Plot data
+        self.plotData()   
+        
+        # Channel list settings
+        if paramR == None:      #For mono IR
+            self.channelList.hide()
+        else:                   #For stereo IR
+            self.itemL = QListWidgetItem()
+            self.itemR = QListWidgetItem()
+            self.itemL.setText("Left Channel")
+            self.itemR.setText("Right Channel")
+            self.channelList.addItem(self.itemL)
+            self.channelList.addItem(self.itemR)
+            self.channelList.setCurrentItem(self.itemL)
+            self.channelList.itemSelectionChanged.connect(self.switchChannel)
+            
+            
+        # Update plot when a table cell of each band is clicked
+        self.paramTable.cellClicked.connect(self.updateData)
+        # Disable table edit mode
+        self.paramTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+        
+        # Button bindings
+        self.setupButton.clicked.connect(self.openSetup)
+        
+               
 
     def loadData(self):
-
-        self.paramTable.setColumnCount(len(nominal_bands))
-        self.paramTable.setHorizontalHeaderLabels(nominal_bands)
+        # Loads data from current param object onto table widget
+        self.paramTable.setColumnCount(len(self.nominalBands))
+        self.paramTable.setHorizontalHeaderLabels(self.nominalBands)
         
-        for idx, band in enumerate(nominal_bands):
-             self.paramTable.setItem(0, idx, QtWidgets.QTableWidgetItem(str(param.EDT[idx])))
-             self.paramTable.setItem(1, idx, QtWidgets.QTableWidgetItem(str(param.T20[idx])))
-             self.paramTable.setItem(2, idx, QtWidgets.QTableWidgetItem(str(param.T30[idx])))
-             self.paramTable.setItem(3, idx, QtWidgets.QTableWidgetItem(str(param.C50[idx])))
-             self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(param.C80[idx])))
-             self.paramTable.setColumnWidth(idx,35)
-    
+        # Set column width according to band filtering
+        if self.b == 1:
+            column_width = 60
+        else:
+            column_width = 40
+        
+        for idx, band in enumerate(self.nominalBands):
+             self.paramTable.setItem(0, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.EDT[idx])))
+             self.paramTable.setItem(1, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.T20[idx])))
+             self.paramTable.setItem(2, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.T30[idx])))
+             self.paramTable.setItem(3, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.C50[idx])))
+             self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.C80[idx])))
+             self.paramTable.setColumnWidth(idx,column_width)
+             
     def plotData(self):
-        self.graphWidget.plot(param.ETC_avg_dB[7], pen='b')
-        self.graphWidget.plot(param.decay[7], pen='r')
+        # Initializes plot and sets lines and labels
+        if self.smoothing == "schroeder":
+            self.decay_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.decay[self.currentBandIdx], pen='r', name="Schroeder decay")
+        elif self.smoothing == "median":
+            self.decay_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.decay[self.currentBandIdx], pen='r', name="Median filtered decay")
+            
+        self.ETC_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.ETC_avg_dB[self.currentBandIdx], pen='b', name="Energy Time Curve")
+        
+
+        
+        
+    def updateData(self, row, column):
+        # Updates plot with data from current band and current param object
+        self.decay_line.setData(self.currentParam.t, self.currentParam.decay[column])
+        self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_avg_dB[column])
+        self.currentBandIdx = column
+        self.graphWidget.setTitle(self.nominalBands[self.currentBandIdx] + "Hz band")
+        
+        
+    def openSetup(self):
+        # Opens setup window and closes data window
+        self.setupWindow = SetupWindow()
+        self.setupWindow.show()
+        self.close()
+    
+    def switchChannel(self):
+        # Switches current channel and loads the corresponding data
+        if self.channelList.currentItem() == self.itemL:
+            self.currentParam = self.paramL
+            self.loadData()
+            self.updateData(1, self.currentBandIdx)
+        else:
+            self.currentParam = self.paramR
+            self.loadData()
+            self.updateData(1, self.currentBandIdx)
+
              
 
 
 
 # main
 app = QApplication(sys.argv)
-mainwindow = MainWindow()
-mainwindow.show()
-# widget = QtWidgets.QStackedWidget()
-# widget.addWidget(mainwindow)
-# widget.setFixedHeight(850)
-# widget.setFixedWidth(1120)
-# widget.show()
+
+setupwindow = SetupWindow()
+setupwindow.show()
+# 
+
 try:
     sys.exit(app.exec_())
 except:

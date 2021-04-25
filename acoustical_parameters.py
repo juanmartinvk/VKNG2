@@ -20,6 +20,9 @@ class AcParam:
         self.EDTt = []
         self.b = 1
         self.crossing_point = []
+        self.fs = None
+        self.t = None
+    
 
 
 
@@ -27,9 +30,10 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     
     param = AcParam()
     
+
+    
     #Start at peak of impulse
     IR_raw = IR_raw[np.argmax(IR_raw):]
-    
 
     
     #Define band index array and nominal bands
@@ -62,6 +66,8 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         #dB and average (only for graph)
         ETC_dB_band = 10*np.log10(ETC_band/np.max(ETC_band))
         ETC_avg_dB_band = 10*np.log10(moving_average(ETC_band/np.max(ETC_band), 240))
+        # ETC_avg_dB_band = moving_average(ETC_band, 240)
+        # ETC_avg_dB_band =10*np.log10( ETC_avg_dB_band / np.max(ETC_avg_dB_band))
         
         
         #Truncate
@@ -105,6 +111,10 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     param.T30 = np.round(param.T30, decimals=2)
     param.C50 = np.round (param.C50, decimals=2)
     param.C80 = np.round(param.C80, decimals=2)
+    
+    #Add fs and time axis to param
+    param.fs = fs
+    param.t = np.linspace(0, param.ETC[0].size / param.fs , num=param.ETC[0].size)
     
     #return ETC_avg_dB, decay, EDT, T20, T30, C50, C80
     #return  IACCe, Tt, EDTt
@@ -376,14 +386,8 @@ def schroeder(ETC, pad):
     return sch
 
 def median_filter(ETC, f, fs):
-    #No sé qué hacer con la ventana. Tiene que ser impar
-    #window = 1501 #para 32 Hz
+
     window = 1501
-    # window = round(1 / f * fs)
-    # if window % 2 == 0:
-    #     window += 1
-    # if window < 3:
-    #     window = 3
     
     #Median filter
     med = medfilt(ETC, window)

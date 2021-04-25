@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>716</width>
-    <height>614</height>
+    <width>845</width>
+    <height>620</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -19,33 +19,33 @@
      <rect>
       <x>30</x>
       <y>370</y>
-      <width>641</width>
+      <width>661</width>
       <height>201</height>
      </rect>
     </property>
     <row>
      <property name="text">
-      <string>EDT</string>
+      <string>EDT [s]</string>
      </property>
     </row>
     <row>
      <property name="text">
-      <string>T20</string>
+      <string>T20 [s]</string>
      </property>
     </row>
     <row>
      <property name="text">
-      <string>T30</string>
+      <string>T30 [s]</string>
      </property>
     </row>
     <row>
      <property name="text">
-      <string>C50</string>
+      <string>C50 [dB]</string>
      </property>
     </row>
     <row>
      <property name="text">
-      <string>C80</string>
+      <string>C80 [dB]</string>
      </property>
     </row>
    </widget>
@@ -54,8 +54,34 @@
      <rect>
       <x>30</x>
       <y>20</y>
-      <width>641</width>
+      <width>661</width>
       <height>301</height>
+     </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="setupButton">
+    <property name="geometry">
+     <rect>
+      <x>710</x>
+      <y>20</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Analyze another file</string>
+    </property>
+   </widget>
+   <widget class="QListWidget" name="channelList">
+    <property name="enabled">
+     <bool>true</bool>
+    </property>
+    <property name="geometry">
+     <rect>
+      <x>710</x>
+      <y>70</y>
+      <width>121</width>
+      <height>41</height>
      </rect>
     </property>
    </widget>
@@ -65,7 +91,7 @@
     <rect>
      <x>0</x>
      <y>0</y>
-     <width>716</width>
+     <width>845</width>
      <height>21</height>
     </rect>
    </property>
