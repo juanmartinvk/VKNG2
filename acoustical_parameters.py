@@ -290,6 +290,7 @@ def lundeby(ETC, maf_window, band, fs):
     dB_to_noise = 7 # dB above noise for linear regression
     interval_density = 5 #number of time intervals per each 10 dB of dynamic range
     idx_last_10percent = -int(ETC.size/10) #start index of last 10% of signal
+    idx_last_5percent = ETC.size-int(ETC.size/20)
     late_dyn_range = 20 # Dynamic range to be used for late decay slope estimation
     
     # 1) Moving average filter, window from 10 to 50ms
@@ -312,6 +313,9 @@ def lundeby(ETC, maf_window, band, fs):
 
     # 4) Find preliminar crossing point
     crossing_point = np.argmin(np.abs(line - noise_estimate))
+    if crossing_point >= ETC.size or crossing_point <= np.argmax(ETC):
+        print("Regression failed")
+        return ETC, ETC.size
     
     # 5) Calculate new interval length for moving average filter
     dyn_range = lin_reg.intercept-noise_estimate
@@ -360,6 +364,12 @@ def lundeby(ETC, maf_window, band, fs):
 
         # 9) Find new crosspoint
         crossing_point = np.argmin(np.abs(line - noise_estimate))
+        if crossing_point <= np.argmax(ETC):
+            print(band, "Hz band: Regression failed")
+            return ETC, ETC.size
+        if (counter > 5 and crossing_point > ETC.size+idx_last_10percent) or crossing_point > idx_last_5percent :
+            print(band, "Hz band: crosspoint too close to end")
+            return ETC, ETC.size
         #Exception for too many loops
         if counter > 30:
             print(band, 'Hz: Could not achieve convergence. Abort!')
