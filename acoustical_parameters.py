@@ -18,11 +18,12 @@ class AcParam:
         self.C80 = []
         self.Tt = []
         self.EDTt = []
+        self.IACCe = []
         self.b = 1
         self.crossing_point = []
         self.fs = None
         self.t = None
-    
+
 
 
 
@@ -74,8 +75,8 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         if truncate == 'lundeby':
             ETC_truncated_band, crossing_point_band = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
         elif truncate is None:
-            ETC_truncated = ETC_band
-            crossing_point = ETC_band.size
+            ETC_truncated_band = ETC_band
+            crossing_point_band = ETC_band.size
         else:
             print('invalid truncate')
         
@@ -83,7 +84,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         if smoothing == 'schroeder':
             decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
         elif smoothing == 'median':
-            decay_band = median_filter(ETC_truncated_band, f_low, fs)
+            decay_band = median_filter(ETC_truncated_band, f_low, fs, ETC_band.size-crossing_point_band)
         else:
             print('invalid smoothing')
 
@@ -130,12 +131,13 @@ def EDT_from_IR(signal, fs):
     init=0
     end=-10
     factor=6
- 
+    
+    signal = signal[np.argmax(signal):]
     s_init = np.argmin(np.abs(signal - init))
     s_end = np.argmin(np.abs(signal-end))
     
     #cut signal
-    signal=signal[s_init:s_end]      
+    signal=signal[s_init:s_end]
     
     t = np.arange(s_init, s_end) / fs
     y=signal
@@ -157,7 +159,8 @@ def T20_from_IR(signal, fs):
     init=-5
     end=-25
     factor=3
- 
+    
+    signal = signal[np.argmax(signal):]
     s_init = np.argmin(np.abs(signal - init))
     s_end = np.argmin(np.abs(signal-end))
     
@@ -186,7 +189,8 @@ def T30_from_IR(signal, fs):
     init=-5
     end=-35
     factor=2
- 
+    
+    signal = signal[np.argmax(signal):]
     s_init = np.argmin(np.abs(signal - init))
     s_end = np.argmin(np.abs(signal-end))
     
@@ -385,15 +389,18 @@ def schroeder(ETC, pad):
 
     return sch
 
-def median_filter(ETC, f, fs):
+def median_filter(ETC, f, fs, pad):
 
-    window = 1501
-    
+    window = 2145
+    #window = int( (1/f * fs) // 2 * 2 + 1)
     #Median filter
     med = medfilt(ETC, window)
+    # Pad with zeros for same array length
+    med = np.concatenate((med, np.zeros(pad)))  
     #dB scale, normalize
-    med = 10*np.log10(med / np.max(med))
-    
+    with np.errstate(divide='ignore'): #ignore divide by zero warning
+        med = 10*np.log10(med / np.max(med))
+
     return med
 
 def moving_average(ETC, window):    
@@ -401,3 +408,6 @@ def moving_average(ETC, window):
     ETC_averaged = np.convolve(ETC_padded, np.ones((window,))/window, mode='valid') #Moving average filter
 
     return ETC_averaged
+
+def convolve_sweep(sweep, inverse_filter):
+    return sweep
