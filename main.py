@@ -7,10 +7,10 @@ from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
 
-def analyzeFile(filePath, b, smoothing="schroeder"):
+def analyzeFile(impulsePath, filterPath, b, smoothing="schroeder", dataType="IR"):
 
     # Read file
-    IR_raw, fs = sf.read(filePath)
+    IR_raw, fs = sf.read(impulsePath)
     IR_raw_L = IR_raw
     IR_raw_R = None
     
@@ -19,10 +19,20 @@ def analyzeFile(filePath, b, smoothing="schroeder"):
         IR_raw_L = IR_raw[0:, 0]
         IR_raw_R = IR_raw[0:, 1]
     
+    # If sweep, convolve with inverse filter
+    if filterPath is not None:
+        inverse_filter, fs_filter = sf.read(filterPath)
+        if inverse_filter.ndim == 2:
+            inverse_filter = inverse_filter[0:, 0]
+        if fs != fs_filter:
+            print("Sampling rates of sweep and inverse filter do not match")
+        IR_raw_L = ap.convolve_sweep(IR_raw_L, inverse_filter)
+    
+    
     # Calculate parameters
-    acParamL = ap.parameters(IR_raw_L, fs, b=b, truncate='lundeby', smoothing=smoothing)
+    acParamL = ap.parameters(IR_raw_L, fs, b, truncate='lundeby', smoothing=smoothing)
     if IR_raw_R is not None:
-        acParamR = ap.parameters(IR_raw_R, fs, b=b, truncate='lundeby', smoothing=smoothing)
+        acParamR = ap.parameters(IR_raw_R, fs, b, truncate='lundeby', smoothing=smoothing)
     else:
         acParamR = None
     
@@ -48,35 +58,78 @@ class SetupWindow(QMainWindow):
         
         # Defaults
         self.octaveButton.setChecked(True)
+        self.schroederButton.setChecked(True)
+        self.impulseButton.setChecked(True)
+        self.filterGroupBox.setEnabled(False)
+        #self.filterGroupBox.hide()
         self.b = 1
         self.smoothing = "schroeder"
+        self.dataType= "IR"
         
         # Window settings
         self.setWindowTitle("Setup")
         
         # Button bindings
-        self.browseFileButton.clicked.connect(self.browseFile)
+        self.browseImpulseButton.clicked.connect(self.browseImpulse)
+        self.browseFilterButton.clicked.connect(self.browseFilter)
         self.analyzeButton.clicked.connect(self.analyzeData)
         self.cancelButton.clicked.connect(self.close)
+        self.impulseButton.toggled.connect(self.toggleImpulse)
+        self.schroederButton.toggled.connect(self.toggleSchroeder)
+        self.medianButton.toggled.connect(self.toggleMedian)
+        self.sweepButton.toggled.connect(self.toggleSweep)
         self.octaveButton.toggled.connect(self.toggleOctave)
         self.thirdOctaveButton.toggled.connect(self.toggleThirdOctave)
     
-    def browseFile(self):
+    def browseImpulse(self):
         # Open file dialog and load path onto line edit widget
         filePath = QFileDialog.getOpenFileName()[0]
-        self.filePathBox.setText(filePath)
+        self.impulsePathBox.setText(filePath)
+    
+    def browseFilter(self):
+        filePath = QFileDialog.getOpenFileName()[0]
+        self.filterPathBox.setText(filePath)
             
     def analyzeData(self):
-        # Analyze IR file data, hide setup window and show data window
-        filePath = self.filePathBox.text()
-        if ntpath.exists(filePath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(filePath, self.b)
+        # Analyze file data, hide setup window and show data window
+        impulsePath = self.impulsePathBox.text()
+        filterPath = self.filterPathBox.text()
+        
+        # For Impulse Response data
+        if self.dataType == "IR" and ntpath.exists(impulsePath):
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.smoothing, self.dataType)
             self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
             self.hide()
             self.dataWindow.show()
+        
+        # For Sweep data
+        elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.smoothing, self.dataType)
+            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
+            self.hide()
+            self.dataWindow.show()
+        
         else:
             print("Invalid file path")
         
+    def toggleImpulse(self):
+        self.filterGroupBox.setEnabled(False)
+        #self.filterGroupBox.hide()
+        self.impulseGroupBox.setTitle("IR file")
+        self.dataType = "IR"
+        
+    def toggleSweep(self):
+        self.filterGroupBox.setEnabled(True)
+        #self.filterGroupBox.show()
+        self.impulseGroupBox.setTitle("Sweep file")
+        self.dataType = "sweep"
+        
+    def toggleSchroeder(self):
+        self.smoothing = "schroeder"
+        
+    def toggleMedian(self):
+        self.smoothing = "median"
+    
     def toggleOctave(self):
         self.b = 1
     
