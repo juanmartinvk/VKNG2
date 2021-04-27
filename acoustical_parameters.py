@@ -1,11 +1,12 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from scipy.signal import butter, sosfilt, medfilt
+from scipy.signal import butter, sosfilt, medfilt, correlate
 from scipy.stats import linregress
 
 class AcParam:
     def __init__(self):
+        self.IR_filtered = []
         self.ETC = []
         self.ETC_dB = []
         self.ETC_avg_dB = []
@@ -91,6 +92,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         
         
         #Append parameters to lists
+        param.IR_filtered.append(IR_filtered)
         param.crossing_point.append(crossing_point_band)
         param.ETC.append(ETC_band)
         param.ETC_dB.append(ETC_dB_band)
@@ -228,9 +230,28 @@ def C80_from_IR(fs, ETC):
     
     return C80 
 
-def IACCe_from_IR(IR):
-    pass
-
+def IACCe_from_IR(paramL, paramR):
+   
+    fs=paramL.fs
+    t_1= int(0.08 * fs + 1) # 80ms samples
+    t_2=int(0.001 * fs + 1) # 1ms samples
+    band=np.arange(len(paramL.IR_filtered))
+    
+     
+    for idx in band:
+        pl = paramL.IR_filtered[(idx)][:(t_1)]
+        pr = paramR.IR_filtered[(idx)][:(t_1)]
+    
+        pl_2 = paramL.ETC[(idx)][:(t_1)]
+        pr_2 = paramR.ETC[(idx)][:(t_1)]
+    
+        IACF = correlate(pl, pr, method='fft') / np.sqrt(np.sum(pl_2) * np.sum(pr_2))
+        IACC= np.amax(np.abs(IACF[:(t_2)]))
+    
+        paramL.IACCe.append(IACC)
+    
+    return paramL.IACCe
+    
 def Tt_from_IR(IR):
     pass
 

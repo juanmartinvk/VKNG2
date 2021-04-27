@@ -33,6 +33,8 @@ def analyzeFile(impulsePath, filterPath, b, smoothing="schroeder", dataType="IR"
     acParamL = ap.parameters(IR_raw_L, fs, b, truncate='lundeby', smoothing=smoothing)
     if IR_raw_R is not None:
         acParamR = ap.parameters(IR_raw_R, fs, b, truncate='lundeby', smoothing=smoothing)
+        acParamR.IACCe=ap.IACCe_from_IR(acParamL, acParamR)
+        acParamL.IACCe=acParamR.IACCe
     else:
         acParamR = None
     
