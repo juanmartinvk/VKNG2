@@ -2,13 +2,14 @@
 import sys
 import soundfile as sf
 import ntpath
+import csv
+import pandas as pd
 import acoustical_parameters as ap
-from scipy.signal import fftconvolve
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
 
-def analyzeFile(impulsePath, filterPath, b, smoothing="schroeder", dataType="IR"):
+def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR"):
 
     # Read file
     IR_raw, fs = sf.read(impulsePath)
@@ -33,9 +34,9 @@ def analyzeFile(impulsePath, filterPath, b, smoothing="schroeder", dataType="IR"
     
     
     # Calculate parameters
-    acParamL = ap.parameters(IR_raw_L, fs, b, truncate='lundeby', smoothing=smoothing)
+    acParamL = ap.parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing)
     if IR_raw_R is not None:
-        acParamR = ap.parameters(IR_raw_R, fs, b, truncate='lundeby', smoothing=smoothing)
+        acParamR = ap.parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing)
         acParamR.IACCe=ap.IACCe_from_IR(acParamL, acParamR)
         acParamL.IACCe=acParamR.IACCe
     else:
@@ -64,12 +65,15 @@ class SetupWindow(QMainWindow):
         # Defaults
         self.octaveButton.setChecked(True)
         self.schroederButton.setChecked(True)
+        self.lundebyButton.setChecked(True)
         self.impulseButton.setChecked(True)
         self.filterGroupBox.setEnabled(False)
         #self.filterGroupBox.hide()
         self.b = 1
         self.smoothing = "schroeder"
+        self.truncate = 'lundeby'
         self.dataType= "IR"
+        
         
         # Window settings
         self.setWindowTitle("Setup")
@@ -85,6 +89,8 @@ class SetupWindow(QMainWindow):
         self.sweepButton.toggled.connect(self.toggleSweep)
         self.octaveButton.toggled.connect(self.toggleOctave)
         self.thirdOctaveButton.toggled.connect(self.toggleThirdOctave)
+        self.lundebyButton.toggled.connect(self.toggleLundeby)
+        self.noCompButton.toggled.connect(self.toggleNoComp)
     
     def browseImpulse(self):
         # Open file dialog and load path onto line edit widget
@@ -102,14 +108,14 @@ class SetupWindow(QMainWindow):
         
         # For Impulse Response data
         if self.dataType == "IR" and ntpath.exists(impulsePath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.smoothing, self.dataType)
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate, self.smoothing, self.dataType)
             self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
             self.hide()
             self.dataWindow.show()
         
         # For Sweep data
         elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.smoothing, self.dataType)
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate, self.smoothing, self.dataType)
             self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
             self.hide()
             self.dataWindow.show()
@@ -140,6 +146,12 @@ class SetupWindow(QMainWindow):
     
     def toggleThirdOctave(self):
         self.b = 3
+        
+    def toggleLundeby(self):
+        self.truncate = 'lundeby'
+    
+    def toggleNoComp(self):
+        self.truncate = None
 
         
 
@@ -199,6 +211,7 @@ class DataWindow(QMainWindow):
         
         # Button bindings
         self.setupButton.clicked.connect(self.openSetup)
+        self.exportButton.clicked.connect(self.exportData)
         
                
 
@@ -258,7 +271,48 @@ class DataWindow(QMainWindow):
             self.loadData()
             self.updateData(1, self.currentBandIdx)
 
-             
+    def exportData(self):
+        file_types = "CSV (*.csv);; Excel Spreadsheet (*.xlsx)"
+        options = QFileDialog.Options()
+        default_name = 'untitled'
+        filename, _ = QFileDialog.getSaveFileName(self, 'Save as... File', default_name, filter=file_types, options=options)
+        
+        
+        
+        if filename[-4:] != '.csv' and filename[-5:] != '.xlsx':
+            filename = filename + '.csv'
+        
+        
+        f = list(self.nominalBands)
+        
+        EDT = list(self.currentParam.EDT)
+        T20 = list(self.currentParam.T20)
+        T30 = list(self.currentParam.T30)
+        C50 = list(self.currentParam.C50)
+        C80 = list(self.currentParam.C80)
+        
+        f.insert(0, "f [Hz]")
+        EDT.insert(0, "EDT [s]")
+        T20.insert(0, "T20 [s]")
+        T30.insert(0, "T30 [s]")
+        C50.insert(0, "C50 [dB]")
+        C80.insert(0, "C80 [dB]")
+        
+        with open(filename, 'w', newline='') as file:
+            writer = csv.writer(file)
+            writer.writerow(f)
+            writer.writerow(EDT)
+            writer.writerow(T20)
+            writer.writerow(T30)
+            writer.writerow(C50)
+            writer.writerow(C80)
+        
+        if filename[-5:] == '.xlsx':
+            columns = ("EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]")
+            xlsx = pd.read_csv(filename)
+            xlsx.index = columns
+            xlsx = xlsx.to_excel(filename, columns=self.nominalBands, index_label = "f [Hz]")
+        
 
 
 

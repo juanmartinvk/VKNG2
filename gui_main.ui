@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>845</width>
-    <height>620</height>
+    <height>749</height>
    </rect>
   </property>
   <property name="windowTitle">
@@ -20,7 +20,7 @@
       <x>30</x>
       <y>370</y>
       <width>661</width>
-      <height>201</height>
+      <height>321</height>
      </rect>
     </property>
     <row>
@@ -46,6 +46,16 @@
     <row>
      <property name="text">
       <string>C80 [dB]</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>IACCe</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>Tt [s]</string>
      </property>
     </row>
    </widget>
@@ -83,6 +93,19 @@
       <width>121</width>
       <height>41</height>
      </rect>
+    </property>
+   </widget>
+   <widget class="QPushButton" name="exportButton">
+    <property name="geometry">
+     <rect>
+      <x>710</x>
+      <y>650</y>
+      <width>121</width>
+      <height>41</height>
+     </rect>
+    </property>
+    <property name="text">
+     <string>Export data...</string>
     </property>
    </widget>
   </widget>

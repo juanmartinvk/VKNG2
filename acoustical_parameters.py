@@ -272,13 +272,20 @@ def bandpass(IR, f_low, f_high, fs):
     -------
     Filtered impulse response array
     """
+    # Invert
+    IR = IR[-1:0:-1]
+    
     nyq = 0.5 * fs
     if f_high >= nyq:
         f_high = nyq-1
     low = f_low / nyq
     high = f_high / nyq
-    sos = butter(4, [low, high], btype="band", output="sos")    
-    return sosfilt(sos, IR)
+    sos = butter(4, [low, high], btype="band", output="sos")
+    IR_filtered = sosfilt(sos, IR)
+    #Invert
+    IR_filtered = IR_filtered[-1:0:-1]
+    
+    return IR_filtered
 
 def limits_iec_61260(index, b, fr=1000):
     """
@@ -313,7 +320,7 @@ def lundeby(ETC, maf_window, band, fs):
     interval_density = 5 #number of time intervals per each 10 dB of dynamic range
     idx_last_10percent = -int(ETC.size/10) #start index of last 10% of signal
     idx_last_5percent = ETC.size-int(ETC.size/20)
-    late_dyn_range = 20 # Dynamic range to be used for late decay slope estimation
+    late_dyn_range = 15 # Dynamic range to be used for late decay slope estimation
     
     # 1) Moving average filter, window from 10 to 50ms
     ETC_averaged = moving_average(ETC, maf_window)
