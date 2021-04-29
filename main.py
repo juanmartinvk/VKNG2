@@ -3,6 +3,7 @@ import sys
 import soundfile as sf
 import ntpath
 import acoustical_parameters as ap
+from scipy.signal import fftconvolve
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
@@ -27,6 +28,8 @@ def analyzeFile(impulsePath, filterPath, b, smoothing="schroeder", dataType="IR"
         if fs != fs_filter:
             print("Sampling rates of sweep and inverse filter do not match")
         IR_raw_L = ap.convolve_sweep(IR_raw_L, inverse_filter)
+        if IR_raw_R is not None:
+            IR_raw_R = ap.convolve_sweep(IR_raw_R, inverse_filter)
     
     
     # Calculate parameters

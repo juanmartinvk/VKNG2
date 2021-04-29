@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import numpy as np
-from scipy.signal import butter, sosfilt, medfilt, correlate
+from scipy.signal import butter, sosfilt, medfilt, correlate, fftconvolve
 from scipy.stats import linregress
 
 class AcParam:
@@ -36,7 +36,9 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
     
     #Start at peak of impulse
     IR_raw = IR_raw[np.argmax(IR_raw):]
-
+    
+    #Trim
+    IR_raw = trim_impulse(IR_raw, fs)
     
     #Define band index array and nominal bands
     if b == 3:
@@ -68,8 +70,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         #dB and average (only for graph)
         ETC_dB_band = 10*np.log10(ETC_band/np.max(ETC_band))
         ETC_avg_dB_band = 10*np.log10(moving_average(ETC_band/np.max(ETC_band), 240))
-        # ETC_avg_dB_band = moving_average(ETC_band, 240)
-        # ETC_avg_dB_band =10*np.log10( ETC_avg_dB_band / np.max(ETC_avg_dB_band))
+
         
         
         #Truncate
@@ -335,7 +336,7 @@ def lundeby(ETC, maf_window, band, fs):
     # 4) Find preliminar crossing point
     crossing_point = np.argmin(np.abs(line - noise_estimate))
     if crossing_point >= ETC.size or crossing_point <= np.argmax(ETC):
-        print("Regression failed")
+        print(band, "Hz band: Regression failed")
         return ETC, ETC.size
     
     # 5) Calculate new interval length for moving average filter
@@ -440,5 +441,59 @@ def moving_average(ETC, window):
 
     return ETC_averaged
 
+def trim_impulse(IR, fs):
+    # Trims the Impulse Response signal after 2 seconds of steady noise level
+    
+    #T rim zeros
+    IR = np.trim_zeros(IR)
+    #Average response and dB
+    ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
+    # Define chunk size
+    chunk_t = 0.5
+    chunk_samples = int(chunk_t * fs)
+    chunk_num = int(IR.size // chunk_samples) #Number of whole chunks in IR
+    
+    # Exception for very short IR
+    if chunk_num <= 3:
+        return IR
+    
+    
+    mean_old = 0
+    mean_new = 0
+    same_counter = 0
+    
+    # Sweep the signal in 1 second chunks with 50% overlap. 
+    # After 4 iterations of average level within +-3dB, truncate the signal at that point
+    for i in range(chunk_num-1):
+        
+        mean_old = mean_new
+        
+        if same_counter == 4:
+            return IR[:(i-1)*chunk_samples]
+        
+        start = i * chunk_samples
+        stop = (i + 2) * chunk_samples
+        mean_new = np.mean(ETC_dB[start:stop])
+        
+        #Exception for bumps
+        if mean_new > mean_old + 3:
+            return IR[:(i-1)*chunk_samples]
+        
+        #If within 3 dB of the previous chunk, add 1 to counter. If not, reset.
+        if mean_new > mean_old - 3:
+            same_counter += 1
+        else:
+            same_counter = 0
+    
+    return IR
+        
+
+        
+
+
 def convolve_sweep(sweep, inverse_filter):
-    return sweep
+    IR = fftconvolve(sweep, inverse_filter, mode='same')
+    IR = np.trim_zeros(IR)
+    return IR
+    
+    
