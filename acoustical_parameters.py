@@ -235,7 +235,7 @@ def IACCe_from_IR(paramL, paramR):
    
     fs=paramL.fs
     t_1= int(0.08 * fs + 1) # 80ms samples
-    t_2=int(0.001 * fs + 1) # 1ms samples
+    # t_2=int(0.001 * fs + 1) # 1ms samples
     band=np.arange(len(paramL.IR_filtered))
     
      
@@ -243,11 +243,11 @@ def IACCe_from_IR(paramL, paramR):
         pl = paramL.IR_filtered[(idx)][:(t_1)]
         pr = paramR.IR_filtered[(idx)][:(t_1)]
     
-        pl_2 = paramL.ETC[(idx)][:(t_1)]
-        pr_2 = paramR.ETC[(idx)][:(t_1)]
+        pl_2 = pl ** 2
+        pr_2 = pr ** 2
     
         IACF = correlate(pl, pr, method='fft') / np.sqrt(np.sum(pl_2) * np.sum(pr_2))
-        IACC= np.amax(np.abs(IACF[:(t_2)]))
+        IACC= np.amax(np.abs(IACF))
     
         paramL.IACCe.append(IACC)
     
