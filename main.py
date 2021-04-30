@@ -4,6 +4,7 @@ import soundfile as sf
 import ntpath
 import csv
 import pandas as pd
+import numpy as np
 import acoustical_parameters as ap
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
@@ -37,7 +38,7 @@ def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schro
     acParamL = ap.parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing)
     if IR_raw_R is not None:
         acParamR = ap.parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing)
-        acParamR.IACCe=ap.IACCe_from_IR(acParamL, acParamR)
+        acParamR.IACCe=np.round(ap.IACCe_from_IR(acParamL, acParamR), decimals=3)
         acParamL.IACCe=acParamR.IACCe
     else:
         acParamR = None
@@ -94,8 +95,8 @@ class SetupWindow(QMainWindow):
     
     def browseImpulse(self):
         # Open file dialog and load path onto line edit widget
-        filePath = QFileDialog.getOpenFileName()[0]
-        self.impulsePathBox.setText(filePath)
+        self.filePath = QFileDialog.getOpenFileName()[0]
+        self.impulsePathBox.setText(self.filePath)
     
     def browseFilter(self):
         filePath = QFileDialog.getOpenFileName()[0]
@@ -109,14 +110,14 @@ class SetupWindow(QMainWindow):
         # For Impulse Response data
         if self.dataType == "IR" and ntpath.exists(impulsePath):
             self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate, self.smoothing, self.dataType)
-            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
+            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
             self.hide()
             self.dataWindow.show()
         
         # For Sweep data
         elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
             self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate, self.smoothing, self.dataType)
-            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.smoothing)
+            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
             self.hide()
             self.dataWindow.show()
         
@@ -156,12 +157,13 @@ class SetupWindow(QMainWindow):
         
 
 class DataWindow(QMainWindow):
-    def __init__(self, paramL, paramR, nominalBands, b, smoothing="schroeder"):
+    def __init__(self, paramL, paramR, nominalBands, b, filePath, smoothing="schroeder"):
         super(DataWindow, self).__init__()
         self.paramL = paramL
         self.paramR = paramR
         self.b = b
         self.nominalBands = nominalBands
+        self.filePath = filePath
 
         
         # Defaults
@@ -232,6 +234,10 @@ class DataWindow(QMainWindow):
              self.paramTable.setItem(2, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.T30[idx])))
              self.paramTable.setItem(3, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.C50[idx])))
              self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.C80[idx])))
+             self.paramTable.setItem(5, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.Tt[idx])))
+             self.paramTable.setItem(6, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.EDTTt[idx])))
+             if self.paramR is not None:
+                 self.paramTable.setItem(7, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.IACCe[idx])))
              self.paramTable.setColumnWidth(idx,column_width)
              
     def plotData(self):
@@ -242,13 +248,14 @@ class DataWindow(QMainWindow):
             self.decay_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.decay[self.currentBandIdx], pen='r', name="Median filtered decay")
             
         self.ETC_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.ETC_avg_dB[self.currentBandIdx], pen='b', name="Energy Time Curve")
-        
+        #self.ETC_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.ETC_dB[self.currentBandIdx], pen='b', name="Energy Time Curve")
 
         
         
     def updateData(self, row, column):
         # Updates plot with data from current band and current param object
         self.decay_line.setData(self.currentParam.t, self.currentParam.decay[column])
+        #self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_dB[column])
         self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_avg_dB[column])
         self.currentBandIdx = column
         self.graphWidget.setTitle(self.nominalBands[self.currentBandIdx] + "Hz band")
@@ -274,7 +281,16 @@ class DataWindow(QMainWindow):
     def exportData(self):
         file_types = "CSV (*.csv);; Excel Spreadsheet (*.xlsx)"
         options = QFileDialog.Options()
-        default_name = 'untitled'
+        
+        default_name = ntpath.basename(self.filePath)
+        ext_idx = default_name.find(".")
+        default_name = default_name[:ext_idx]
+        if self.paramR is not None:
+            if self.channelList.currentItem() == self.itemL:
+                default_name = default_name + "_L"
+            else:
+                default_name = default_name + "_R"
+        
         filename, _ = QFileDialog.getSaveFileName(self, 'Save as... File', default_name, filter=file_types, options=options)
         
         
@@ -290,6 +306,9 @@ class DataWindow(QMainWindow):
         T30 = list(self.currentParam.T30)
         C50 = list(self.currentParam.C50)
         C80 = list(self.currentParam.C80)
+        Tt = list(self.currentParam.Tt)
+        EDTTt = list(self.currentParam.EDTTt)
+        IACCe = list(self.currentParam.IACCe)
         
         f.insert(0, "f [Hz]")
         EDT.insert(0, "EDT [s]")
@@ -297,18 +316,20 @@ class DataWindow(QMainWindow):
         T30.insert(0, "T30 [s]")
         C50.insert(0, "C50 [dB]")
         C80.insert(0, "C80 [dB]")
+        Tt.insert(0, "Tt [s]")
+        EDTTt.insert(0, "EDTTt [s]")
+        IACCe.insert(0, "IACCe")
         
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerow(f)
-            writer.writerow(EDT)
-            writer.writerow(T20)
-            writer.writerow(T30)
-            writer.writerow(C50)
-            writer.writerow(C80)
+            writer.writerows([f, EDT, T20, T30, C50, C80, Tt, EDTTt])
+            if self.paramR is not None:
+                writer.writerow(IACCe)
         
         if filename[-5:] == '.xlsx':
-            columns = ("EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]")
+            columns = ["EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]", "Tt [s]", "EDTTt [s]"]
+            if self.paramR is not None:
+                columns.append("IACCe")
             xlsx = pd.read_csv(filename)
             xlsx.index = columns
             xlsx = xlsx.to_excel(filename, columns=self.nominalBands, index_label = "f [Hz]")
