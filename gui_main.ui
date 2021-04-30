@@ -50,12 +50,17 @@
     </row>
     <row>
      <property name="text">
-      <string>IACCe</string>
+      <string>Tt [s]</string>
      </property>
     </row>
     <row>
      <property name="text">
-      <string>Tt [s]</string>
+      <string>EDTTt [s]</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
+      <string>IACCe</string>
      </property>
     </row>
    </widget>
@@ -115,7 +120,7 @@
      <x>0</x>
      <y>0</y>
      <width>845</width>
-     <height>21</height>
+     <height>26</height>
     </rect>
    </property>
   </widget>

@@ -18,7 +18,7 @@ class AcParam:
         self.C50 = []
         self.C80 = []
         self.Tt = []
-        self.EDTt = []
+        self.EDTTt = []
         self.IACCe = []
         self.b = 1
         self.crossing_point = []
@@ -70,6 +70,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         #dB and average (only for graph)
         ETC_dB_band = 10*np.log10(ETC_band/np.max(ETC_band))
         ETC_avg_dB_band = 10*np.log10(moving_average(ETC_band/np.max(ETC_band), 240))
+        
 
         
         
@@ -104,17 +105,21 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         param.T30.append(T30_from_IR(decay_band, fs))
         param.C50.append(C50_from_IR(fs, ETC_band))
         param.C80.append(C80_from_IR(fs, ETC_band))
+        param.Tt.append(Tt_from_IR(ETC_truncated_band, fs))
+        param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
        
        
         
         counter += 1
     
     #Round parameters to 2 decimals
-    param.EDT = np.round(param.EDT, decimals=2)
-    param.T20 = np.round(param.T20, decimals=2)
-    param.T30 = np.round(param.T30, decimals=2)
-    param.C50 = np.round (param.C50, decimals=2)
-    param.C80 = np.round(param.C80, decimals=2)
+    param.EDT = np.round(param.EDT, 2)
+    param.T20 = np.round(param.T20, 2)
+    param.T30 = np.round(param.T30, 2)
+    param.C50 = np.round (param.C50, 2)
+    param.C80 = np.round(param.C80, 2)
+    param.Tt = np.round(param.Tt, 2)
+    param.EDTTt = np.round(param.EDTTt, 2)
     
     #Add fs and time axis to param
     param.fs = fs
@@ -250,14 +255,45 @@ def IACCe_from_IR(paramL, paramR):
         IACC= np.amax(np.abs(IACF))
     
         paramL.IACCe.append(IACC)
-    
+
     return paramL.IACCe
     
-def Tt_from_IR(IR):
-    pass
+def Tt_from_IR(ETC, fs):
+    idx_5ms = int(0.005 * fs)
+    ETC = ETC[idx_5ms:]
+    energy_total = np.sum(ETC)
+    energy_cum = np.cumsum(ETC)
 
-def EDTt_from_IR(IR):
-    pass
+    Tt_idx = np.argmin(np.abs(energy_cum - 0.99*energy_total)) + idx_5ms
+    Tt = Tt_idx / fs
+    
+    return Tt
+    
+    
+
+def EDTTt_from_IR(signal, Tt, fs):
+    s_init=0
+    s_end = int(Tt * fs)
+    factor=6
+
+    
+    #cut signal
+    signal=signal[:s_end]
+    
+    x = np.arange(s_init, s_end)
+    y=signal
+   
+    # Linear regression
+    slope, intercept =np.polyfit(x,y,1)
+    line = slope * np.arange(signal.size) + intercept
+    
+    init = line[0]
+    t = np.argmin(np.abs(line - (init - 10))) / fs
+    
+    EDTTt= factor * t
+    
+    return EDTTt
+
 
 def bandpass(IR, f_low, f_high, fs):
     """
@@ -318,13 +354,27 @@ def limits_iec_61260(index, b, fr=1000):
 def lundeby(ETC, maf_window, band, fs):
     dB_to_noise = 7 # dB above noise for linear regression
     interval_density = 5 #number of time intervals per each 10 dB of dynamic range
-    idx_last_10percent = -int(ETC.size/10) #start index of last 10% of signal
-    idx_last_5percent = ETC.size-int(ETC.size/20)
+
     late_dyn_range = 15 # Dynamic range to be used for late decay slope estimation
     
+    # Trim excess noise tail (more than 2 seconds)
+    ETC_trim = trim_impulse(ETC, fs, mode='ETC')
+    # Trim last 5 percent of signal for high frequencies
+    if band > 8000:
+        idx_last_5percent = ETC_trim.size-int(ETC_trim.size/20)
+        ETC_trim = ETC_trim[:idx_last_5percent]
+    
+    
+    #ETC_trim = ETC
+    
+    idx_last_10percent = -int(ETC_trim.size/10) #start index of last 10% of signal
+    idx_last_5percent = ETC_trim.size-int(ETC_trim.size/20)
+    
     # 1) Moving average filter, window from 10 to 50ms
-    ETC_averaged = moving_average(ETC, maf_window)
+    ETC_averaged = moving_average(ETC_trim, maf_window)
     ETC_avg_dB = 10 * np.log10(ETC_averaged)
+    
+
     
     # 2) Estimate noise level with last 10% of the signal
     noise_estimate = 10 * np.log10( np.mean(ETC_averaged[idx_last_10percent:]) )
@@ -332,6 +382,8 @@ def lundeby(ETC, maf_window, band, fs):
     if np.max(ETC_avg_dB) <= dB_to_noise + noise_estimate:
         print(band, "Hz band: This doesn't look like a Room Impulse Response!")
         return ETC, ETC.size
+    
+    
     
     # 3) Estimate preliminar slope
     idx_stop = np.where(ETC_avg_dB >= noise_estimate + dB_to_noise)[0][-1]
@@ -347,7 +399,7 @@ def lundeby(ETC, maf_window, band, fs):
         return ETC, ETC.size
     
     # 5) Calculate new interval length for moving average filter
-    dyn_range = lin_reg.intercept-noise_estimate
+    dyn_range = lin_reg.intercept - noise_estimate
     
     #Exception for too low dynamic range
     if dyn_range <= dB_to_noise + late_dyn_range:
@@ -386,7 +438,12 @@ def lundeby(ETC, maf_window, band, fs):
         idx_start = np.argmin(np.abs(line - (noise_estimate + dB_to_noise + late_dyn_range) ))
         idx_stop = np.argmin(np.abs(line - (noise_estimate + dB_to_noise) ))
 
-        #Linear regression
+        # Exception for other rare errors
+        if idx_stop <= idx_start:
+            print(band, "Hz band: Regression failed")
+            return ETC, ETC.size
+        
+        # Linear regression
         x = np.arange(idx_start, idx_stop)
         lin_reg = linregress(x, ETC_avg_dB[idx_start:idx_stop])
         line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
@@ -448,13 +505,17 @@ def moving_average(ETC, window):
 
     return ETC_averaged
 
-def trim_impulse(IR, fs):
+def trim_impulse(IR, fs, mode='IR'):
     # Trims the Impulse Response signal after 2 seconds of steady noise level
     
-    #T rim zeros
+    # Trim zeros
     IR = np.trim_zeros(IR)
     #Average response and dB
-    ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
+    if mode == 'IR':
+        ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
+    elif mode == 'ETC':
+        ETC_dB = 10 * np.log10(moving_average(IR, 500))
+    
     # Define chunk size
     chunk_t = 0.5
     chunk_samples = int(chunk_t * fs)
