@@ -10,7 +10,7 @@ from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
 
-def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR"):
+def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR", median_window=20):
 
     # Read file
     IR_raw, fs = sf.read(impulsePath)
@@ -35,9 +35,9 @@ def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schro
     
     
     # Calculate parameters
-    acParamL = ap.parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing)
+    acParamL = ap.parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
     if IR_raw_R is not None:
-        acParamR = ap.parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing)
+        acParamR = ap.parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
         acParamR.IACCe=np.round(ap.IACCe_from_IR(acParamL, acParamR), decimals=3)
         acParamL.IACCe=acParamR.IACCe
     else:
@@ -109,14 +109,16 @@ class SetupWindow(QMainWindow):
         
         # For Impulse Response data
         if self.dataType == "IR" and ntpath.exists(impulsePath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate, self.smoothing, self.dataType)
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate,
+                                                                      self.smoothing, self.dataType, int(self.windowText.text()))
             self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
             self.hide()
             self.dataWindow.show()
         
         # For Sweep data
         elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate, self.smoothing, self.dataType)
+            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate,
+                                                                      self.smoothing, self.dataType, int(self.windowText.text()))
             self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
             self.hide()
             self.dataWindow.show()
@@ -138,9 +140,13 @@ class SetupWindow(QMainWindow):
         
     def toggleSchroeder(self):
         self.smoothing = "schroeder"
+        self.windowLabel.setEnabled(False)
+        self.windowText.setEnabled(False)
         
     def toggleMedian(self):
         self.smoothing = "median"
+        self.windowLabel.setEnabled(True)
+        self.windowText.setEnabled(True)
     
     def toggleOctave(self):
         self.b = 1

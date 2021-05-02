@@ -28,7 +28,7 @@ class AcParam:
 
 
 
-def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
+def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_window=20):
     
     param = AcParam()
     
@@ -87,7 +87,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder'):
         if smoothing == 'schroeder':
             decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
         elif smoothing == 'median':
-            decay_band = median_filter(ETC_truncated_band, f_low, fs, ETC_band.size-crossing_point_band)
+            decay_band = median_filter(ETC_truncated_band, f_low, fs, median_window, ETC_band.size-crossing_point_band)
         else:
             print('invalid smoothing')
 
@@ -457,7 +457,7 @@ def lundeby(ETC, maf_window, band, fs):
             print(band, "Hz band: crosspoint too close to end")
             return ETC, ETC.size
         #Exception for too many loops
-        if counter > 30:
+        if counter > 50:
             print(band, 'Hz: Could not achieve convergence. Abort!')
             crossing_point = ETC.size
             break
@@ -485,10 +485,13 @@ def schroeder(ETC, pad):
 
     return sch
 
-def median_filter(ETC, f, fs, pad):
-
-    window = 2145
-    #window = int( (1/f * fs) // 2 * 2 + 1)
+def median_filter(ETC, f, fs, window, pad):
+    
+    #Convert window in milliseconds to an odd number of samples
+    window = int(window/1000 * fs)
+    if window % 2 == 0:
+        window +=1
+    
     #Median filter
     med = medfilt(ETC, window)
     # Pad with zeros for same array length
