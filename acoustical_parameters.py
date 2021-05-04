@@ -24,6 +24,7 @@ class AcParam:
         self.crossing_point = []
         self.fs = None
         self.t = None
+        self.error = []
 
 
 
@@ -76,10 +77,11 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
         
         #Truncate
         if truncate == 'lundeby':
-            ETC_truncated_band, crossing_point_band = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
+            ETC_truncated_band, crossing_point_band, error = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
         elif truncate is None:
             ETC_truncated_band = ETC_band
             crossing_point_band = ETC_band.size
+            error = False
         else:
             print('invalid truncate')
         
@@ -107,6 +109,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
         param.C80.append(C80_from_IR(fs, ETC_band))
         param.Tt.append(Tt_from_IR(ETC_truncated_band, fs))
         param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
+        param.error.append(error)
        
        
         
@@ -272,13 +275,13 @@ def Tt_from_IR(ETC, fs):
     
 
 def EDTTt_from_IR(signal, Tt, fs):
-    s_init=0
+    s_init=int(0.005*fs)
     s_end = int(Tt * fs)
     factor=6
 
     
     #cut signal
-    signal=signal[:s_end]
+    signal=signal[s_init:s_end]
     
     x = np.arange(s_init, s_end)
     y=signal
@@ -309,7 +312,7 @@ def bandpass(IR, f_low, f_high, fs):
     Filtered impulse response array
     """
     # Invert
-    IR = IR[-1:0:-1]
+    #IR = IR[-1:0:-1]
     
     nyq = 0.5 * fs
     if f_high >= nyq:
@@ -319,7 +322,7 @@ def bandpass(IR, f_low, f_high, fs):
     sos = butter(4, [low, high], btype="band", output="sos")
     IR_filtered = sosfilt(sos, IR)
     #Invert
-    IR_filtered = IR_filtered[-1:0:-1]
+    #IR_filtered = IR_filtered[-1:0:-1]
     
     return IR_filtered
 
@@ -352,10 +355,27 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 def lundeby(ETC, maf_window, band, fs):
-    dB_to_noise = 7 # dB above noise for linear regression
-    interval_density = 5 #number of time intervals per each 10 dB of dynamic range
-
+    error = False
     late_dyn_range = 15 # Dynamic range to be used for late decay slope estimation
+    dB_to_noise = 7 # dB above noise for linear regression
+    
+    #Define number of time intervals per each 10 dB of dynamic range for MAF
+    
+    if band <= 50:
+        interval_density = 1
+    elif band <= 160:
+        interval_density = 2
+    elif band <= 500:
+        interval_density = 3
+    elif band <= 2000:
+        interval_density = 5
+    elif band <= 8000:
+        interval_density = 7
+    else:
+        interval_density = 10
+    
+    
+    
     
     # Trim excess noise tail (more than 2 seconds)
     ETC_trim = trim_impulse(ETC, fs, mode='ETC')
@@ -371,7 +391,14 @@ def lundeby(ETC, maf_window, band, fs):
     idx_last_5percent = ETC_trim.size-int(ETC_trim.size/20)
     
     # 1) Moving average filter, window from 10 to 50ms
-    ETC_averaged = moving_average(ETC_trim, maf_window)
+    if band > 200:
+        ETC_averaged = moving_average(ETC_trim, maf_window)
+    elif band > 50:
+        ETC_averaged = moving_average(ETC_trim, 5000)
+    elif band > 32:
+        ETC_averaged = moving_average(ETC_trim, 10000)
+    else:
+        ETC_averaged = moving_average(ETC_trim, 25000)
     ETC_avg_dB = 10 * np.log10(ETC_averaged)
     
 
@@ -381,7 +408,8 @@ def lundeby(ETC, maf_window, band, fs):
     # Exception for REALLY LOW dynamic range
     if np.max(ETC_avg_dB) <= dB_to_noise + noise_estimate:
         print(band, "Hz band: This doesn't look like a Room Impulse Response!")
-        return ETC, ETC.size
+        error = True
+        return ETC, ETC.size, error
     
     
     
@@ -393,10 +421,12 @@ def lundeby(ETC, maf_window, band, fs):
     line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
 
     # 4) Find preliminar crossing point
-    crossing_point = np.argmin(np.abs(line - noise_estimate))
+    crossing_point_pre = np.argmin(np.abs(line - noise_estimate))
+    crossing_point = crossing_point_pre
     if crossing_point >= ETC.size or crossing_point <= np.argmax(ETC):
-        print(band, "Hz band: Regression failed")
-        return ETC, ETC.size
+        print(band, "Hz band: Regression failed (pre)")
+        error = True
+        return ETC, ETC.size, error
     
     # 5) Calculate new interval length for moving average filter
     dyn_range = lin_reg.intercept - noise_estimate
@@ -404,7 +434,9 @@ def lundeby(ETC, maf_window, band, fs):
     #Exception for too low dynamic range
     if dyn_range <= dB_to_noise + late_dyn_range:
         print(band, "Hz band: Dynamic Range too low!")
-        return ETC, ETC.size
+        error = True
+        ETC_truncated = ETC[:crossing_point_pre]
+        return ETC_truncated, crossing_point_pre, error
     
     interval_num = np.intc(interval_density * dyn_range / 10)
     new_window = np.intc(idx_stop / interval_num)
@@ -440,8 +472,10 @@ def lundeby(ETC, maf_window, band, fs):
 
         # Exception for other rare errors
         if idx_stop <= idx_start:
-            print(band, "Hz band: Regression failed")
-            return ETC, ETC.size
+            print(band, "Hz: Regression failed (idx)")
+            ETC_truncated = ETC[:crossing_point_old]
+            error = True
+            return ETC_truncated, crossing_point_pre, error
         
         # Linear regression
         x = np.arange(idx_start, idx_stop)
@@ -451,15 +485,18 @@ def lundeby(ETC, maf_window, band, fs):
         # 9) Find new crosspoint
         crossing_point = np.argmin(np.abs(line - noise_estimate))
         if crossing_point <= np.argmax(ETC):
-            print(band, "Hz band: Regression failed")
-            return ETC, ETC.size
+            print(band, "Hz: Regression failed")
+            ETC_truncated = ETC[:crossing_point_old]
+            error = True
+            return ETC_truncated, crossing_point_pre, error
         if (counter > 5 and crossing_point > ETC.size+idx_last_10percent) or crossing_point > idx_last_5percent :
             print(band, "Hz band: crosspoint too close to end")
-            return ETC, ETC.size
+            return ETC, ETC.size, error
         #Exception for too many loops
-        if counter > 50:
+        if counter > 30:
             print(band, 'Hz: Could not achieve convergence. Abort!')
-            crossing_point = ETC.size
+            crossing_point = crossing_point_pre
+            error = True
             break
         
         counter += 1
@@ -470,7 +507,7 @@ def lundeby(ETC, maf_window, band, fs):
     
     #return ETC_averaged, noise_estimate, lin_reg
     #return line, noise_estimate
-    return ETC_truncated, crossing_point
+    return ETC_truncated, crossing_point, error
     
 
 def schroeder(ETC, pad):
