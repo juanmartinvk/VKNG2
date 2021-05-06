@@ -8,7 +8,7 @@ import numpy as np
 import acoustical_parameters as ap
 from PyQt5.uic import loadUi
 from PyQt5 import QtWidgets
-from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem
+from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem, QErrorMessage
 
 def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR", median_window=20):
 
@@ -107,24 +107,51 @@ class SetupWindow(QMainWindow):
         impulsePath = self.impulsePathBox.text()
         filterPath = self.filterPathBox.text()
         
-        # For Impulse Response data
-        if self.dataType == "IR" and ntpath.exists(impulsePath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate,
-                                                                      self.smoothing, self.dataType, int(self.windowText.text()))
-            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
-            self.hide()
-            self.dataWindow.show()
+        try:
+            # For Impulse Response data
+            if self.dataType == "IR" and ntpath.exists(impulsePath):
+                self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate,
+                                                                          self.smoothing, self.dataType, int(self.windowText.text()))
         
-        # For Sweep data
-        elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
-            self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate,
-                                                                      self.smoothing, self.dataType, int(self.windowText.text()))
-            self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
-            self.hide()
-            self.dataWindow.show()
+            # For Sweep data
+            elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
+                self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate,
+                                                                          self.smoothing, self.dataType, int(self.windowText.text()))
+            
+            else:
+                print("Invalid file path")
         
-        else:
-            print("Invalid file path")
+        except:
+            error_dialog = QErrorMessage()
+            error_dialog.showMessage('Unknown error. Please try again')
+        
+        # Replace zeros (errors) with "-"
+        def replaceZeros(myl):
+            myl = list(myl)
+            for idx, value in enumerate(myl):
+                if value == 0:
+                    myl[idx] = "--"
+                
+            return myl
+        
+        def replaceParam(param):
+            param.EDT = replaceZeros(param.EDT)
+            param.T20 = replaceZeros(param.T20)
+            param.T30 = replaceZeros(param.T30)
+            param.EDTTt = replaceZeros(param.EDTTt)
+            return param
+        
+        self.paramL = replaceParam(self.paramL)
+        if self.paramR is not None:
+            self.paramR = replaceParam(self.paramR)
+        
+        
+        self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
+        self.hide()
+        self.dataWindow.show()
+        
+        
+        
         
     def toggleImpulse(self):
         self.filterGroupBox.setEnabled(False)
@@ -233,7 +260,8 @@ class DataWindow(QMainWindow):
             column_width = 60
         else:
             column_width = 40
-        
+            
+        #Load data to table
         for idx, band in enumerate(self.nominalBands):
              self.paramTable.setItem(0, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.EDT[idx])))
              self.paramTable.setItem(1, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.T20[idx])))
