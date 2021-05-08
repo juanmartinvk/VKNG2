@@ -29,7 +29,7 @@ class AcParam:
 
 
 
-def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_window=20, ignore_errors=False):
+def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_window=20, ignore_errors=False, verbose=False):
     
     param = AcParam()
     
@@ -81,7 +81,13 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
         
         #Truncate
         if truncate == 'lundeby':
-            crossing_point_band = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs)
+            try:
+                crossing_point_band = lundeby(ETC_band, maf_windows[counter], nominal_bands[counter], fs, verbose=verbose)
+            except:
+                if verbose == True:
+                    print("Unknown error in truncation")
+                crossing_point_band = ETC_band.size
+                
             ETC_truncated_band = ETC_band[:crossing_point_band]
         elif truncate is None:
             ETC_truncated_band = ETC_band
@@ -138,7 +144,7 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
     
     
     
-    # Identify outliers:
+    # Identify outliers and replace with zeros:
     if ignore_errors == False:
         EDT_error = [0] * len(nominal_bands)
         T20_error = [0] * len(nominal_bands)
@@ -391,7 +397,7 @@ def limits_iec_61260(index, b, fr=1000):
 
 
 
-def lundeby(ETC, maf_window, band, fs):
+def lundeby(ETC, maf_window, band, fs, verbose=False):
 
     late_dyn_range = 15 # Dynamic range to be used for late decay slope estimation
     dB_to_noise = 7 # dB above noise for linear regression
@@ -454,7 +460,8 @@ def lundeby(ETC, maf_window, band, fs):
     noise_estimate = 10 * np.log10( np.mean(ETC_averaged[idx_last_10percent:]) )
     # Exception for REALLY LOW dynamic range
     if np.max(ETC_avg_dB) <= dB_to_noise + noise_estimate:
-        print(band, "Hz band: This doesn't look like a Room Impulse Response!")
+        if verbose == True:
+            print(band, "Hz band: This doesn't look like a Room Impulse Response!")
         return ETC.size
     
     
@@ -470,7 +477,8 @@ def lundeby(ETC, maf_window, band, fs):
     crossing_point_pre = np.argmin(np.abs(line - noise_estimate))
     crossing_point = crossing_point_pre
     if crossing_point >= ETC.size or crossing_point <= np.argmax(ETC):
-        print(band, "Hz band: Regression failed (pre)")
+        if verbose == True:
+            print(band, "Hz band: Regression failed (pre)")
         return ETC.size
     
     # 5) Calculate new interval length for moving average filter
@@ -478,7 +486,8 @@ def lundeby(ETC, maf_window, band, fs):
     
     #Exception for too low dynamic range
     if dyn_range <= dB_to_noise + late_dyn_range:
-        print(band, "Hz band: Dynamic Range too low!")
+        if verbose == True:
+            print(band, "Hz band: Dynamic Range too low!")
         return crossing_point_pre + offset
     
     interval_num = np.intc(interval_density * dyn_range / 10)
@@ -518,9 +527,10 @@ def lundeby(ETC, maf_window, band, fs):
         idx_start = np.argmin(np.abs(line - (noise_estimate + dB_to_noise + late_dyn_range) ))
         idx_stop = np.argmin(np.abs(line - (noise_estimate + dB_to_noise) ))
 
-        # Exception for other rare ETC_averageds
+        # Exception for other rare errors
         if idx_stop <= idx_start:
-            print(band, "Hz: Regression failed (idx)")
+            if verbose == True:
+                print(band, "Hz: Regression failed (idx)")
             return crossing_point_pre+offset
         
         # Linear regression
@@ -529,26 +539,33 @@ def lundeby(ETC, maf_window, band, fs):
         line = lin_reg.slope * np.arange(ETC_avg_dB.size) + lin_reg.intercept
         
         if lin_reg.slope > 0:
-            print(band, "Hz: Positive slope!")
+            if verbose == True:
+                print(band, "Hz: Positive slope!")
             ETC_averaged = True
             return crossing_point_pre + offset
+        
         if lin_reg.slope == 0:
-            print(band, "Hz: Flat line!")
+            if verbose == True:
+                print(band, "Hz: Flat line!")
             return crossing_point_pre + offset
         
         # 9) Find new crosspoint
         crossing_point = np.argmin(np.abs(line - noise_estimate))
         if crossing_point+offset <= np.argmax(ETC):
-            print(band, "Hz: Regression failed (x-point less than max)")
+            if verbose == True:
+                print(band, "Hz: Regression failed (x-point less than max)")
             ETC_averaged = True
             return crossing_point_pre+offset
+        
         if (counter > 5 and crossing_point > ETC_averaged.size+idx_last_10percent) or crossing_point > idx_last_5percent :
             if crossing_point_pre > idx_last_10percent:    
-                print(band, "Hz band: crosspoint too close to end")
+                if verbose == True:
+                    print(band, "Hz band: crosspoint too close to end")
                 return ETC.size
         #Exception for too many loops
         if counter > 30:
-            print(band, 'Hz: Could not achieve convergence. Abort!')
+            if verbose == True:
+                print(band, 'Hz: Could not achieve convergence. Abort!')
             if abs(crossing_point-crossing_point_old) > 0.01:
                 crossing_point = min(crossing_point_pre, crossing_point)
             ETC_averaged = True
