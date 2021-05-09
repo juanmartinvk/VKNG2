@@ -623,10 +623,11 @@ def trim_impulse(IR, fs, mode='IR'):
     # Trim zeros
     IR = np.trim_zeros(IR)
     #Average response and dB
-    if mode == 'IR':
-        ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
-    elif mode == 'ETC':
-        ETC_dB = 10 * np.log10(moving_average(IR, 500))
+    with np.errstate(divide='ignore'): #Ignore divide by zero warning
+        if mode == 'IR':
+            ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
+        elif mode == 'ETC':
+            ETC_dB = 10 * np.log10(moving_average(IR, 500))
     
     # Define chunk size
     chunk_t = 0.5

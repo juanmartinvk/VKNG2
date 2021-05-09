@@ -7,7 +7,7 @@ import pandas as pd
 import numpy as np
 import acoustical_parameters as ap
 from PyQt5.uic import loadUi
-from PyQt5 import QtWidgets
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem, QErrorMessage
 
 def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR", median_window=20):
@@ -77,7 +77,8 @@ class SetupWindow(QMainWindow):
         
         
         # Window settings
-        self.setWindowTitle("Setup")
+        self.setWindowTitle("VKNG - Setup")
+        self.setWindowIcon(QtGui.QIcon("icon.jpg"))
         
         # Button bindings
         self.browseImpulseButton.clicked.connect(self.browseImpulse)
@@ -119,7 +120,8 @@ class SetupWindow(QMainWindow):
                                                                           self.smoothing, self.dataType, int(self.windowText.text()))
             
             else:
-                print("Invalid file path")
+                error_dialog = QErrorMessage()
+                error_dialog.showMessage('Invalid file path')
         
         except:
             error_dialog = QErrorMessage()
@@ -211,7 +213,8 @@ class DataWindow(QMainWindow):
         self.loadData()
         
         # Window preferences
-        self.setWindowTitle("Acoustical Parameters")
+        self.setWindowTitle("VKNG - Acoustical Parameters")
+        self.setWindowIcon(QtGui.QIcon("icon.jpg"))
         
         # Graph settings
         self.graphWidget.setBackground('w')   
