@@ -220,7 +220,7 @@ class DataWindow(QMainWindow):
         
         # Window preferences
         self.setWindowTitle("VKNG - Acoustical Parameters")
-        self.setWindowIcon(QtGui.QIcon("icon.jpg"))
+        self.setWindowIcon(QtGui.QIcon("icon.png"))
         
         # Graph settings
         self.graphWidget.setBackground('w')   
