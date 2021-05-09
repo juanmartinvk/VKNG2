@@ -5,10 +5,15 @@ import ntpath
 import csv
 import pandas as pd
 import numpy as np
+import ctypes
 import acoustical_parameters as ap
 from PyQt5.uic import loadUi
-from PyQt5 import QtWidgets, QtGui
+from PyQt5 import QtWidgets, QtCore, QtGui
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem, QErrorMessage
+
+myappid = u'VKNG'
+ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
+
 
 def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR", median_window=20):
 
@@ -78,7 +83,8 @@ class SetupWindow(QMainWindow):
         
         # Window settings
         self.setWindowTitle("VKNG - Setup")
-        self.setWindowIcon(QtGui.QIcon("icon.jpg"))
+
+        self.setWindowIcon(QtGui.QIcon("icon.png"))
         
         # Button bindings
         self.browseImpulseButton.clicked.connect(self.browseImpulse)
