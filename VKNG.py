@@ -66,7 +66,7 @@ class SetupWindow(QMainWindow):
         super(SetupWindow, self).__init__()
         
         # Load designed UI
-        loadUi("gui_setup.ui",self)
+        loadUi("gui/gui_setup.ui",self)
         
         # Defaults
         self.octaveButton.setChecked(True)
@@ -84,7 +84,7 @@ class SetupWindow(QMainWindow):
         # Window settings
         self.setWindowTitle("VKNG - Setup")
 
-        self.setWindowIcon(QtGui.QIcon("icon.png"))
+        self.setWindowIcon(QtGui.QIcon("gui/icon.png"))
         
         # Button bindings
         self.browseImpulseButton.clicked.connect(self.browseImpulse)
@@ -213,14 +213,14 @@ class DataWindow(QMainWindow):
         self.smoothing = smoothing
         
         #Load designed UI 
-        loadUi("gui_main.ui",self)
+        loadUi("gui/gui_main.ui",self)
         
         #Load data to table
         self.loadData()
         
         # Window preferences
         self.setWindowTitle("VKNG - Acoustical Parameters")
-        self.setWindowIcon(QtGui.QIcon("icon.png"))
+        self.setWindowIcon(QtGui.QIcon("gui/icon.png"))
         
         # Graph settings
         self.graphWidget.setBackground('w')   
