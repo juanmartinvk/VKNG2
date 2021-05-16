@@ -1,65 +1,20 @@
 # -*- coding: utf-8 -*-
 import sys
-import soundfile as sf
 import ntpath
 import csv
 import pandas as pd
-import numpy as np
 import ctypes
 import acoustical_parameters as ap
 from PyQt5.uic import loadUi
-from PyQt5 import QtWidgets, QtCore, QtGui
+from PyQt5 import QtWidgets, QtGui
 from PyQt5.QtWidgets import QMainWindow, QApplication, QAbstractItemView, QFileDialog, QListWidgetItem, QErrorMessage
 
+# App ID for Windows taskbar icon
 myappid = u'VKNG'
 ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(myappid)
 
 
-def analyzeFile(impulsePath, filterPath, b, truncate='lundeby', smoothing="schroeder", dataType="IR", median_window=20):
-
-    # Read file
-    IR_raw, fs = sf.read(impulsePath)
-    IR_raw_L = IR_raw
-    IR_raw_R = None
-    
-    # Check if stereo or mono. If stereo, split channels.
-    if IR_raw.ndim == 2:
-        IR_raw_L = IR_raw[0:, 0]
-        IR_raw_R = IR_raw[0:, 1]
-    
-    # If sweep, convolve with inverse filter
-    if filterPath is not None:
-        inverse_filter, fs_filter = sf.read(filterPath)
-        if inverse_filter.ndim == 2:
-            inverse_filter = inverse_filter[0:, 0]
-        if fs != fs_filter:
-            print("Sampling rates of sweep and inverse filter do not match")
-        IR_raw_L = ap.convolve_sweep(IR_raw_L, inverse_filter)
-        if IR_raw_R is not None:
-            IR_raw_R = ap.convolve_sweep(IR_raw_R, inverse_filter)
-    
-    
-    # Calculate parameters
-    acParamL = ap.parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
-    if IR_raw_R is not None:
-        acParamR = ap.parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
-        acParamR.IACCe=np.round(ap.IACCe_from_IR(acParamL, acParamR), decimals=3)
-        acParamL.IACCe=acParamR.IACCe
-    else:
-        acParamR = None
-    
-    # Define nominal bands
-    if b == 3:
-        nominalBands = ['25', '31.5', '40', '50', '63', '80', '100', '125', '160',
-                         '200', '250', '315', '400', '500', '630', '800', '1k',
-                         '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
-                         '6.3k', '8k', '10k', '12.5k', '16k', '20k']
-    elif b == 1:
-        nominalBands = ['31.5', '63', '125', '250', '500',
-                         '1k', '2k', '4k', '8k', '16k']
-        
-    return acParamL, acParamR, nominalBands
-
+# Setup Window
 
 class SetupWindow(QMainWindow):
     def __init__(self):
@@ -74,7 +29,6 @@ class SetupWindow(QMainWindow):
         self.lundebyButton.setChecked(True)
         self.impulseButton.setChecked(True)
         self.filterGroupBox.setEnabled(False)
-        #self.filterGroupBox.hide()
         self.b = 1
         self.smoothing = "schroeder"
         self.truncate = 'lundeby'
@@ -83,7 +37,6 @@ class SetupWindow(QMainWindow):
         
         # Window settings
         self.setWindowTitle("VKNG - Setup")
-
         self.setWindowIcon(QtGui.QIcon("gui/icon.png"))
         
         # Button bindings
@@ -101,7 +54,6 @@ class SetupWindow(QMainWindow):
         self.noCompButton.toggled.connect(self.toggleNoComp)
     
     def browseImpulse(self):
-        # Open file dialog and load path onto line edit widget
         self.filePath = QFileDialog.getOpenFileName()[0]
         self.impulsePathBox.setText(self.filePath)
     
@@ -117,14 +69,13 @@ class SetupWindow(QMainWindow):
         try:
             # For Impulse Response data
             if self.dataType == "IR" and ntpath.exists(impulsePath):
-                self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, None, self.b, self.truncate,
-                                                                          self.smoothing, self.dataType, int(self.windowText.text()))
-        
+                self.paramL, self.paramR, self.nominalBands = ap.analyzeFile(impulsePath, None, self.b, self.truncate,
+                                                                          self.smoothing, int(self.windowText.text()))
             # For Sweep data
             elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
-                self.paramL, self.paramR, self.nominalBands = analyzeFile(impulsePath, filterPath, self.b, self.truncate,
-                                                                          self.smoothing, self.dataType, int(self.windowText.text()))
-            
+                self.paramL, self.paramR, self.nominalBands = ap.analyzeFile(impulsePath, filterPath, self.b, self.truncate,
+                                                                          self.smoothing, int(self.windowText.text()))
+            # If file path doesn't exist, show error message
             else:
                 error_dialog = QErrorMessage()
                 error_dialog.showMessage('Invalid file path')
@@ -133,7 +84,7 @@ class SetupWindow(QMainWindow):
             error_dialog = QErrorMessage()
             error_dialog.showMessage('Unknown error. Please try again')
         
-        # Replace zeros (errors) with "-"
+        # Replace zeros (errors) with "--"
         def replaceZeros(myl):
             myl = list(myl)
             for idx, value in enumerate(myl):
@@ -153,23 +104,19 @@ class SetupWindow(QMainWindow):
         if self.paramR is not None:
             self.paramR = replaceParam(self.paramR)
         
-        
+        # Generate data window
         self.dataWindow = DataWindow(self.paramL, self.paramR, self.nominalBands, self.b, self.filePath, self.smoothing)
+        # Hide setup and show data
         self.hide()
         self.dataWindow.show()
         
-        
-        
-        
     def toggleImpulse(self):
         self.filterGroupBox.setEnabled(False)
-        #self.filterGroupBox.hide()
         self.impulseGroupBox.setTitle("IR file")
         self.dataType = "IR"
         
     def toggleSweep(self):
         self.filterGroupBox.setEnabled(True)
-        #self.filterGroupBox.show()
         self.impulseGroupBox.setTitle("Sweep file")
         self.dataType = "sweep"
         
@@ -196,10 +143,11 @@ class SetupWindow(QMainWindow):
         self.truncate = None
 
         
-
+# Data window
 class DataWindow(QMainWindow):
     def __init__(self, paramL, paramR, nominalBands, b, filePath, smoothing="schroeder"):
         super(DataWindow, self).__init__()
+        # Asign inputs to self
         self.paramL = paramL
         self.paramR = paramR
         self.b = b
@@ -222,6 +170,9 @@ class DataWindow(QMainWindow):
         self.setWindowTitle("VKNG - Acoustical Parameters")
         self.setWindowIcon(QtGui.QIcon("gui/icon.png"))
         
+        # Disable table edit mode
+        self.paramTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
+
         # Graph settings
         self.graphWidget.setBackground('w')   
         self.graphWidget.addLegend(offset = (0, 10))
@@ -247,20 +198,17 @@ class DataWindow(QMainWindow):
             self.channelList.setCurrentItem(self.itemL)
             self.channelList.itemSelectionChanged.connect(self.switchChannel)
             
-            
         # Update plot when a table cell of each band is clicked
         self.paramTable.cellClicked.connect(self.updateData)
-        # Disable table edit mode
-        self.paramTable.setEditTriggers(QAbstractItemView.NoEditTriggers)
         
         # Button bindings
         self.setupButton.clicked.connect(self.openSetup)
         self.exportButton.clicked.connect(self.exportData)
         
-               
 
     def loadData(self):
         # Loads data from current param object onto table widget
+        
         self.paramTable.setColumnCount(len(self.nominalBands))
         self.paramTable.setHorizontalHeaderLabels(self.nominalBands)
         
@@ -285,6 +233,7 @@ class DataWindow(QMainWindow):
              
     def plotData(self):
         # Initializes plot and sets lines and labels
+        
         if self.smoothing == "schroeder":
             self.decay_line = self.graphWidget.plot(self.currentParam.t, self.currentParam.decay[self.currentBandIdx], pen='r', name="Schroeder decay")
         elif self.smoothing == "median":
@@ -297,6 +246,7 @@ class DataWindow(QMainWindow):
         
     def updateData(self, row, column):
         # Updates plot with data from current band and current param object
+        
         self.decay_line.setData(self.currentParam.t, self.currentParam.decay[column])
         #self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_dB[column])
         self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_avg_dB[column])
@@ -322,28 +272,31 @@ class DataWindow(QMainWindow):
             self.updateData(1, self.currentBandIdx)
 
     def exportData(self):
+        # Export data to CSV or XLSX
+        
         file_types = "CSV (*.csv);; Excel Spreadsheet (*.xlsx)"
         options = QFileDialog.Options()
         
+        # Set default name to IR file without extension
         default_name = ntpath.basename(self.filePath)
         ext_idx = default_name.find(".")
         default_name = default_name[:ext_idx]
+        # If stereo, add "_L" or "_R"
         if self.paramR is not None:
             if self.channelList.currentItem() == self.itemL:
                 default_name = default_name + "_L"
             else:
                 default_name = default_name + "_R"
         
+        # Save File dialog
         filename, _ = QFileDialog.getSaveFileName(self, 'Save as... File', default_name, filter=file_types, options=options)
         
-        
-        
+        # If file has no valid extension, default to .csv
         if filename[-4:] != '.csv' and filename[-5:] != '.xlsx':
             filename = filename + '.csv'
         
-        
+        # Convert parameters to lists
         f = list(self.nominalBands)
-        
         EDT = list(self.currentParam.EDT)
         T20 = list(self.currentParam.T20)
         T30 = list(self.currentParam.T30)
@@ -353,6 +306,7 @@ class DataWindow(QMainWindow):
         EDTTt = list(self.currentParam.EDTTt)
         IACCe = list(self.currentParam.IACCe)
         
+        # Add row index
         f.insert(0, "f [Hz]")
         EDT.insert(0, "EDT [s]")
         T20.insert(0, "T20 [s]")
@@ -363,12 +317,14 @@ class DataWindow(QMainWindow):
         EDTTt.insert(0, "EDTTt [s]")
         IACCe.insert(0, "IACCe")
         
+        # Write CSV
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
             writer.writerows([f, EDT, T20, T30, C50, C80, Tt, EDTTt])
             if self.paramR is not None:
                 writer.writerow(IACCe)
         
+        # If XLSX selected, convert CSV to Excel
         if filename[-5:] == '.xlsx':
             columns = ["EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]", "Tt [s]", "EDTTt [s]"]
             if self.paramR is not None:
@@ -385,7 +341,6 @@ app = QApplication(sys.argv)
 
 setupwindow = SetupWindow()
 setupwindow.show()
-# 
 
 try:
     sys.exit(app.exec_())
