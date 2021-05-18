@@ -65,24 +65,33 @@ class SetupWindow(QMainWindow):
         # Analyze file data, hide setup window and show data window
         impulsePath = self.impulsePathBox.text()
         filterPath = self.filterPathBox.text()
+        f_low = int(self.fLowBox.text())
+        f_high = int(self.fHighBox.text())
         
-        try:
-            # For Impulse Response data
-            if self.dataType == "IR" and ntpath.exists(impulsePath):
-                self.paramL, self.paramR, self.nominalBands = ap.analyzeFile(impulsePath, None, self.b, self.truncate,
-                                                                          self.smoothing, int(self.windowText.text()))
-            # For Sweep data
-            elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
-                self.paramL, self.paramR, self.nominalBands = ap.analyzeFile(impulsePath, filterPath, self.b, self.truncate,
-                                                                          self.smoothing, int(self.windowText.text()))
-            # If file path doesn't exist, show error message
-            else:
-                error_dialog = QErrorMessage()
-                error_dialog.showMessage('Invalid file path')
-        
-        except:
+        # If invalid frequency range, show error message
+        if f_low >= f_high:
             error_dialog = QErrorMessage()
-            error_dialog.showMessage('Unknown error. Please try again')
+            error_dialog.showMessage('Invalid frequency range')
+        else:
+            try:
+                # For Impulse Response data
+                if self.dataType == "IR" and ntpath.exists(impulsePath):
+                    self.paramL, self.paramR = ap.analyzeFile(impulsePath, None, self.b, (f_low, f_high),self.truncate,
+                                                                              self.smoothing, int(self.windowText.text()))
+                # For Sweep data
+                elif self.dataType == "sweep" and ntpath.exists(impulsePath) and ntpath.exists(filterPath):
+                    self.paramL, self.paramR = ap.analyzeFile(impulsePath, filterPath, self.b, (f_low, f_high), self.truncate,
+                                                                              self.smoothing, int(self.windowText.text()))
+                # If file path doesn't exist, show error message
+                else:
+                    error_dialog = QErrorMessage()
+                    error_dialog.showMessage('Invalid file path')
+            
+            except:
+                error_dialog = QErrorMessage()
+                error_dialog.showMessage('Unknown error. Please try again')
+        
+        self.nominalBands = self.paramL.nominalBandsStr
         
         # Replace zeros (errors) with "--"
         def replaceZeros(myl):
@@ -163,6 +172,12 @@ class DataWindow(QMainWindow):
         #Load designed UI 
         loadUi("gui/gui_main.ui",self)
         
+        # Define column header
+        header = self.nominalBands
+        header.insert(0, "Full")
+        self.paramTable.setColumnCount(len(header))
+        self.paramTable.setHorizontalHeaderLabels(header)
+        
         #Load data to table
         self.loadData()
         
@@ -209,9 +224,6 @@ class DataWindow(QMainWindow):
     def loadData(self):
         # Loads data from current param object onto table widget
         
-        self.paramTable.setColumnCount(len(self.nominalBands))
-        self.paramTable.setHorizontalHeaderLabels(self.nominalBands)
-        
         # Set column width according to band filtering
         if self.b == 1:
             column_width = 60
@@ -251,7 +263,10 @@ class DataWindow(QMainWindow):
         #self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_dB[column])
         self.ETC_line.setData(self.currentParam.t, self.currentParam.ETC_avg_dB[column])
         self.currentBandIdx = column
-        self.graphWidget.setTitle(self.nominalBands[self.currentBandIdx] + "Hz band")
+        if self.currentBandIdx == 0:
+            self.graphWidget.setTitle("Full band")
+        else:
+            self.graphWidget.setTitle(self.nominalBands[self.currentBandIdx] + "Hz band")
         
         
     def openSetup(self):

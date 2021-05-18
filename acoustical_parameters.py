@@ -8,7 +8,9 @@ from scipy.stats import linregress
 class AcParam:
 # =============================================================================
 #   An object of the AcParam class contains attributes related to the acoustical
-#   parameters calculated from a Room Impulse Response file.
+#   parameters calculated from a Room Impulse Response file. For lists of parameters,
+#   the first value correspond to the full band calculation, the others to the 
+#   band-filtered parameters from valid frequency bands.
 # =============================================================================
     def __init__(self):
         self.IR_filtered = []
@@ -28,11 +30,12 @@ class AcParam:
         self.b = 1
         self.crossing_point = []
         self.fs = None
+        self.nominalBands = []
         self.t = None
         self.ETC_averaged = []
 
 
-def analyzeFile(impulsePath, filterPath, b, truncate=None, smoothing="schroeder", median_window=20):
+def analyzeFile(impulsePath, filterPath, b, f_lim=(20, 20000), truncate=None, smoothing="schroeder", median_window=20):
     '''
     Reads a mono or stereo Impulse Response file and returns mono and stereo 
     acoustical parameters. The audio file can be input as an IR signal, or as a
@@ -48,6 +51,9 @@ def analyzeFile(impulsePath, filterPath, b, truncate=None, smoothing="schroeder"
     b : int
         Octave fraction for filtering. Default is 1 for octave bands, use 3 for
         third-octave bands.
+    f_lim : tuple, optional
+        Frequency limits (bandwidth) of the analyzed signal in Hz. Default is 
+        (20, 20000).
     truncate : str, optional
         IR truncation method. Default is None for no truncation. Use 'lundeby' for
         truncation by Lundeby's method.
@@ -63,9 +69,6 @@ def analyzeFile(impulsePath, filterPath, b, truncate=None, smoothing="schroeder"
         Left channel (or mono) acoustical parameters.
     acParamR : AcParam object or None
         Right channel acoustical parameters, or None for mono files.
-    nominalBands : list
-        Nominal band string list (10 bands for octave filtering, 30 bands for
-        third-octave).
 
     '''
     # Read file
@@ -91,29 +94,20 @@ def analyzeFile(impulsePath, filterPath, b, truncate=None, smoothing="schroeder"
     
     
     # Calculate parameters
-    acParamL = parameters(IR_raw_L, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
+    acParamL = parameters(IR_raw_L, fs, b, f_lim=f_lim, truncate=truncate, smoothing=smoothing, median_window=median_window)
     if IR_raw_R is not None:
-        acParamR = parameters(IR_raw_R, fs, b, truncate=truncate, smoothing=smoothing, median_window=median_window)
+        acParamR = parameters(IR_raw_R, fs, b, f_lim=f_lim, truncate=truncate, smoothing=smoothing, median_window=median_window)
         acParamR.IACCe=np.round(IACCe_from_IR(acParamL, acParamR), decimals=3)
         acParamL.IACCe=acParamR.IACCe
     else:
         acParamR = None
-    
-    # Define nominal bands
-    if b == 3:
-        nominalBands = ['25', '31.5', '40', '50', '63', '80', '100', '125', '160',
-                         '200', '250', '315', '400', '500', '630', '800', '1k',
-                         '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
-                         '6.3k', '8k', '10k', '12.5k', '16k', '20k']
-    elif b == 1:
-        nominalBands = ['31.5', '63', '125', '250', '500',
-                         '1k', '2k', '4k', '8k', '16k']
+
         
-    return acParamL, acParamR, nominalBands
+    return acParamL, acParamR
 
 
 
-def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_window=20, ignore_errors=False, verbose=False):
+def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='schroeder', median_window=20, ignore_errors=False, verbose=False):
     '''
     Receives a mono Impulse Response signal and returns its monaural acoustical 
     parameters in the form of an object of the AcParam class.
@@ -127,6 +121,9 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
     b : int, optional
         Octave fraction for filtering. Default is 1 for octave bands, use 3 for
         third-octave bands.
+    f_lim : tuple, optional
+        Frequency limits (bandwidth) of the analyzed signal in Hz. Default is 
+        (20, 20000).
     truncate : str or None, optional
         Truncation method. Default is None for no truncation. Use 'lundeby' for
         truncation by Lundeby's method.
@@ -156,26 +153,118 @@ def parameters(IR_raw, fs, b=1, truncate=None, smoothing='schroeder', median_win
     #Trim
     IR_raw = trim_impulse(IR_raw, fs)
     
-    #Define band index array and nominal bands
+    #Define band index array, nominal bands and band limits
+    
     if b == 3:
         band_idx = np.arange(-16, 14)
-        nominal_bands = [25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1300, 1600, 2000, 2500, 3200, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
+        nominal_bands = [25, 31.5, 40, 50, 63, 80, 100, 125, 160, 200, 250, 315, 400, 500, 630, 800, 1000, 1300,
+                         1600, 2000, 2500, 3200, 4000, 5000, 6300, 8000, 10000, 12500, 16000, 20000]
+        param.nominalBandsStr = ['25', '31.5', '40', '50', '63', '80', '100', '125', '160',
+                         '200', '250', '315', '400', '500', '630', '800', '1k',
+                         '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
+                         '6.3k', '8k', '10k', '12.5k', '16k', '20k']
+        band_lim = [limits_iec_61260(idx, b) for idx in band_idx]
     elif b == 1:
         band_idx = np.arange(-5, 5)
         nominal_bands = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
+        param.nominalBandsStr = ['31.5', '63', '125', '250', '500',
+                         '1k', '2k', '4k', '8k', '16k']
+        band_lim = [limits_iec_61260(idx, b) for idx in band_idx]
     else:
         print('invalid b')
     
     #Define window times for moving average filters (between 10 and 50 ms) for each band
-
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
+    
+    # Find band indexes excluded from bandwidth
+    low_idx = 0
+    high_idx = len(nominal_bands)
+    for idx, limits in enumerate(band_lim):
+        if limits[0] < f_lim[0]:
+            low_idx = idx+1
+        if limits[1] > f_lim[1]:
+            high_idx = idx
+            break
+    
+    # Trim unused bands
+    band_idx = band_idx[low_idx:high_idx]
+    nominal_bands = nominal_bands[low_idx:high_idx]
+    band_lim = band_lim[low_idx:high_idx]
+    param.nominalBandsStr = param.nominalBandsStr[low_idx:high_idx]
+    maf_windows = maf_windows[low_idx:high_idx]
+    
 
 
+
+    
+    # Full range parameters
+    
+    #Band limits
+    f_low = f_lim[0]
+    f_high = f_lim[1]
+    #Apply bandpass filter
+    IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
+    
+    #Trim last 5 percent of signal to minimize filter edge effect
+    IR_filtered = IR_filtered[:round(len(IR_filtered)*0.95)]
+    
+    #Square (obtain Energy Time Curve ETC)
+    ETC_band = IR_filtered ** 2
+    #Normalize
+    ETC_band = ETC_band / np.max(ETC_band)
+    
+    #dB and average (only for plotting purposes)
+    ETC_dB_band = 10*np.log10(ETC_band/np.max(ETC_band))
+    ETC_avg_dB_band = 10*np.log10(moving_average(ETC_band/np.max(ETC_band), 240))
+    
+    #Truncate IR at crossing point
+    if truncate == 'lundeby':
+        try:
+            crossing_point_band = lundeby(ETC_band, maf_windows[0], f_low, fs, verbose=verbose)
+        except:
+            if verbose == True:
+                print("Unknown error in truncation")
+            crossing_point_band = ETC_band.size
+        ETC_truncated_band = ETC_band[:crossing_point_band]
+    elif truncate is None:
+        ETC_truncated_band = ETC_band
+        crossing_point_band = ETC_band.size
+    else:
+        print('invalid truncate')
+    
+    #Smoothing
+    if smoothing == 'schroeder':
+        decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
+    elif smoothing == 'median':
+        decay_band = median_filter(ETC_truncated_band, fs, median_window, ETC_band.size-crossing_point_band)
+    else:
+        print('invalid smoothing')
+
+    
+    #Append parameters to lists
+    param.IR_filtered.append(IR_filtered)
+    param.crossing_point.append(crossing_point_band)
+    param.ETC.append(ETC_band)
+    param.ETC_dB.append(ETC_dB_band)
+    param.ETC_avg_dB.append(ETC_avg_dB_band)     
+    param.decay.append(decay_band)
+    param.EDT.append(EDT_from_IR(decay_band, fs))
+    param.T20.append(T20_from_IR(decay_band, fs))
+    param.T30.append(T30_from_IR(decay_band, fs))
+    param.C50.append(C50_from_IR(fs, ETC_band))
+    param.C80.append(C80_from_IR(fs, ETC_band))
+    param.Tt.append(Tt_from_IR(ETC_truncated_band, fs))
+    param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
+
+    
+    # Band-filtered parameters
+    
     counter = 0
     for idx in band_idx:
         #Band limits
-        f_low, f_high = limits_iec_61260(idx, b)
+        f_low = band_lim[counter][0]
+        f_high = band_lim[counter][1]
         #Apply bandpass filter
         IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
         
@@ -502,13 +591,12 @@ def IACCe_from_IR(paramL, paramR):
     
     # Define band index list
     bands = np.arange(len(paramL.IR_filtered))
-    
      
     for idx in bands:
         
         # Slice left and right IR signals
-        pl = paramL.IR_filtered[(idx)][:(t_1)]
-        pr = paramR.IR_filtered[(idx)][:(t_1)]
+        pl = paramL.IR_filtered[idx][:t_1]
+        pr = paramR.IR_filtered[idx][:t_1]
         
         # Square (ETC)
         pl_2 = pl ** 2
@@ -667,10 +755,9 @@ def limits_iec_61260(index, b, fr=1000):
         
     Returns
     -------
-    f_low : float
-        Low band limit
-    f_high : float
-        High band limit
+    f_lim : tuple
+        Tuple with the form (f_low, f_high), frequency band limits for filter
+
     """
     # Define G
     G=10**(3/10)
@@ -685,7 +772,8 @@ def limits_iec_61260(index, b, fr=1000):
     f_low = G**(-1/(2*b)) * f_center
     f_high = G**(1/(2*b)) * f_center
     
-    return f_low, f_high
+    f_lim = (f_low, f_high)
+    return f_lim
 
 
 
