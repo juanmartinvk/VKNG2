@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 import sys
 import ntpath
+import time
 import csv
 import pandas as pd
 import ctypes
@@ -73,6 +74,7 @@ class SetupWindow(QMainWindow):
             error_dialog = QErrorMessage()
             error_dialog.showMessage('Invalid frequency range')
         else:
+            before = time.time()
             try:
                 # For Impulse Response data
                 if self.dataType == "IR" and ntpath.exists(impulsePath):
@@ -90,7 +92,8 @@ class SetupWindow(QMainWindow):
             except:
                 error_dialog = QErrorMessage()
                 error_dialog.showMessage('Unknown error. Please try again')
-        
+            
+            print(time.time() - before)
         self.nominalBands = self.paramL.nominalBandsStr
         
         # Replace zeros (errors) with "--"
@@ -166,7 +169,10 @@ class DataWindow(QMainWindow):
         
         # Defaults
         self.currentParam = self.paramL
-        self.currentBandIdx = self.nominalBands.index("1k")
+        try:
+            self.currentBandIdx = self.nominalBands.index("1k")
+        except:
+            self.currentBandIdx = 0
         self.smoothing = smoothing
         
         #Load designed UI 
@@ -226,7 +232,7 @@ class DataWindow(QMainWindow):
         
         # Set column width according to band filtering
         if self.b == 1:
-            column_width = 60
+            column_width = 55
         else:
             column_width = 40
             

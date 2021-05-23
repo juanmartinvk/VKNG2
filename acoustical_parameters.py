@@ -2,8 +2,9 @@
 
 import numpy as np
 import soundfile as sf
-from scipy.signal import butter, sosfilt, medfilt, correlate, fftconvolve
+from scipy.signal import butter, sosfilt, correlate, fftconvolve
 from scipy.stats import linregress
+from scipy.ndimage import median_filter as mmf
 
 class AcParam:
 # =============================================================================
@@ -153,6 +154,8 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     #Trim
     IR_raw = trim_impulse(IR_raw, fs)
     
+    mmf_factor = median_window
+    
     #Define band index array, nominal bands and band limits
     
     if b == 3:
@@ -164,15 +167,17 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
                          '1.3k', '1.6k', '2k', '2.5k', '3.2k', '4k', '5k', 
                          '6.3k', '8k', '10k', '12.5k', '16k', '20k']
         band_lim = [limits_iec_61260(idx, b) for idx in band_idx]
+        mmf_windows = [round(mmf_factor/(1.2589**(x-1)))+3 for x in range(len(band_idx))]
     elif b == 1:
         band_idx = np.arange(-5, 5)
         nominal_bands = [31.5, 63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000]
         param.nominalBandsStr = ['31.5', '63', '125', '250', '500',
                          '1k', '2k', '4k', '8k', '16k']
         band_lim = [limits_iec_61260(idx, b) for idx in band_idx]
+        mmf_windows = [round(mmf_factor/(2**x)+3) for x in range(len(band_idx))]
     else:
         print('invalid b')
-    
+    print(mmf_windows)
     #Define window times for moving average filters (between 10 and 50 ms) for each band
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
@@ -193,6 +198,7 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     band_lim = band_lim[low_idx:high_idx]
     param.nominalBandsStr = param.nominalBandsStr[low_idx:high_idx]
     maf_windows = maf_windows[low_idx:high_idx]
+    mmf_windows = mmf_windows[low_idx:high_idx]
     
 
 
@@ -237,7 +243,8 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     if smoothing == 'schroeder':
         decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
     elif smoothing == 'median':
-        decay_band = median_filter(ETC_truncated_band, fs, median_window, ETC_band.size-crossing_point_band)
+        #decay_band = median_filter(ETC_truncated_band, fs, median_window, ETC_band.size-crossing_point_band)
+        decay_band = median_filter(ETC_truncated_band, fs, mmf_windows[0], ETC_band.size-crossing_point_band)
     else:
         print('invalid smoothing')
 
@@ -299,7 +306,7 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         if smoothing == 'schroeder':
             decay_band = schroeder(ETC_truncated_band, ETC_band.size-crossing_point_band)
         elif smoothing == 'median':
-            decay_band = median_filter(ETC_truncated_band, fs, median_window, ETC_band.size-crossing_point_band)
+            decay_band = median_filter(ETC_truncated_band, fs, mmf_windows[counter], ETC_band.size-crossing_point_band)
         else:
             print('invalid smoothing')
 
@@ -1036,7 +1043,8 @@ def median_filter(ETC, fs, window, pad):
         window +=1
     
     #Median filter
-    med = medfilt(ETC, window)
+    #med = medfilt(ETC, window)
+    med = mmf(ETC, size=window, mode="nearest")
     # Pad with zeros for same array length
     med = np.concatenate((med, np.zeros(pad)))  
     #dB scale, normalize
