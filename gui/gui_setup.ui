@@ -122,14 +122,14 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>220</x>
+       <x>190</x>
        <y>40</y>
        <width>41</width>
        <height>20</height>
       </rect>
      </property>
      <property name="text">
-      <string>20</string>
+      <string>800</string>
      </property>
      <property name="alignment">
       <set>Qt::AlignCenter</set>
@@ -141,14 +141,14 @@
      </property>
      <property name="geometry">
       <rect>
-       <x>150</x>
-       <y>40</y>
-       <width>71</width>
+       <x>170</x>
+       <y>20</y>
+       <width>91</width>
        <height>16</height>
       </rect>
      </property>
      <property name="text">
-      <string>Window [ms]</string>
+      <string>Max Window [ms]</string>
      </property>
     </widget>
    </widget>
