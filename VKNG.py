@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 import sys
 import ntpath
-import time
 import csv
 import pandas as pd
 import ctypes
@@ -74,7 +73,6 @@ class SetupWindow(QMainWindow):
             error_dialog = QErrorMessage()
             error_dialog.showMessage('Invalid frequency range')
         else:
-            before = time.time()
             try:
                 # For Impulse Response data
                 if self.dataType == "IR" and ntpath.exists(impulsePath):
@@ -93,7 +91,6 @@ class SetupWindow(QMainWindow):
                 error_dialog = QErrorMessage()
                 error_dialog.showMessage('Unknown error. Please try again')
             
-            print(time.time() - before)
         self.nominalBands = self.paramL.nominalBandsStr
         
         # Replace zeros (errors) with "--"

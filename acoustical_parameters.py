@@ -36,6 +36,7 @@ class AcParam:
         self.ETC_averaged = []
 
 
+
 def analyzeFile(impulsePath, filterPath, b, f_lim=(20, 20000), truncate=None, smoothing="schroeder", median_window=20):
     '''
     Reads a mono or stereo Impulse Response file and returns mono and stereo 
@@ -177,7 +178,7 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         mmf_windows = [round(mmf_factor/(2**x)+3) for x in range(len(band_idx))]
     else:
         print('invalid b')
-    print(mmf_windows)
+
     #Define window times for moving average filters (between 10 and 50 ms) for each band
     maf_windows = np.linspace(0.01, 0.05, num=len(band_idx)) #Generate times between 10 and 50ms
     maf_windows = np.intc(maf_windows * fs)[::-1] #Convert to integer number of samples and invert
@@ -261,8 +262,9 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     param.T30.append(T30_from_IR(decay_band, fs))
     param.C50.append(C50_from_IR(fs, ETC_band))
     param.C80.append(C80_from_IR(fs, ETC_band))
-    param.Tt.append(Tt_from_IR(ETC_truncated_band, fs))
+    param.Tt.append(Tt_from_IR(ETC_truncated_band, fs, f_low))
     param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
+    # param.EDTTt.append(EDTTt_from_IR(decay_band, 0.2, fs))
 
     
     # Band-filtered parameters
@@ -323,9 +325,10 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         param.T30.append(T30_from_IR(decay_band, fs))
         param.C50.append(C50_from_IR(fs, ETC_band))
         param.C80.append(C80_from_IR(fs, ETC_band))
-        param.Tt.append(Tt_from_IR(ETC_truncated_band, fs))
+        param.Tt.append(Tt_from_IR(ETC_truncated_band, fs, f_low))
         param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
-       
+        # param.EDTTt.append(EDTTt_from_IR(decay_band, 0.2, fs))
+        
         counter += 1
     
     
@@ -621,7 +624,7 @@ def IACCe_from_IR(paramL, paramR):
     return paramL.IACCe
     
 
-def Tt_from_IR(ETC, fs):
+def Tt_from_IR(ETC, fs, f_low):
     '''
     Calculates Transition Time from Energy Time Curve.
 
@@ -631,6 +634,8 @@ def Tt_from_IR(ETC, fs):
         Energy Time Curve signal.
     fs : int
         Sample rate.
+    f_low : int
+        Lower frequency limit.
 
     Returns
     -------
@@ -638,17 +643,28 @@ def Tt_from_IR(ETC, fs):
         Calculated Transition Time value in seconds.
 
     '''
-    # Find 5 ms index 
-    idx_5ms = int(0.005 * fs)
-    # Slice ETC to exclude direct sound
-    ETC = ETC[idx_5ms:]
-    # Calculate total ETC energy
-    energy_total = np.sum(ETC)
-    # Generate array of cumulative energy
-    energy_cum = np.cumsum(ETC)
-    # Calculate Transition Time as the time when 99% of energy total is reached
-    Tt_idx = np.argmin(np.abs(energy_cum - 0.99*energy_total)) + idx_5ms
-    Tt = Tt_idx / fs
+    
+    if f_low > 100:
+        window = round(fs/f_low)
+        # print(window)
+        if window % 2 == 0:
+            window = window + 1
+        window = int(window)
+        ETC_median = median_filter(ETC, fs, window, 0)
+        # ETC_median = median_filter(ETC, fs, 51, 0)
+        
+        DCER = 10*np.log10(ETC) + ETC_median
+        DCER = 10**(DCER/10)
+        
+        actual_EDF = np.cumsum(DCER)
+        actual_EDF = actual_EDF/np.max(actual_EDF)
+        
+        
+        Tt = np.argmin(np.abs(actual_EDF-0.99*np.max(actual_EDF)))/fs
+    else:
+        Tt = 0
+    
+    # Tt = 1
     
     return Tt
     
@@ -674,30 +690,33 @@ def EDTTt_from_IR(decay, Tt, fs):
         Calculated Early Decay Time (Transition Time) value.
 
     '''
-    
+    if Tt > 0.01:
+    # if False:
     # Define start and end levels, time factor
-    s_init=int(0.005*fs)
-    s_end = int(Tt * fs)
-    factor=6
-
+        s_init=int(0.005*fs)
+        s_end = int(Tt * fs)
+        factor=6
     
-    # Slice
-    decay=decay[s_init:s_end]
-    
-    # Define axes for linear regression
-    x = np.arange(s_init, s_end)
-    y=decay
-   
-    # Linear regression
-    slope, intercept =np.polyfit(x,y,1)
-    line = slope * np.arange(decay.size) + intercept
-    
-    # Find the time it takes for the signal to decay 10 dB
-    init = line[0]
-    t = np.argmin(np.abs(line - (init - 10))) / fs
-    
-    #Calculate EDTTt
-    EDTTt= factor * t
+        
+        # Slice
+        decay=decay[s_init:s_end]
+        
+        # Define axes for linear regression
+        x = np.arange(s_init, s_end)
+        y=decay
+       
+        # Linear regression
+        slope, intercept =np.polyfit(x,y,1)
+        line = slope * np.arange(decay.size) + intercept
+        
+        # Find the time it takes for the signal to decay 10 dB
+        init = line[0]
+        t = np.argmin(np.abs(line - (init - 10))) / fs
+        
+        #Calculate EDTTt
+        EDTTt= factor * t
+    else:
+        EDTTt = 0
     
     return EDTTt
 
@@ -1043,7 +1062,6 @@ def median_filter(ETC, fs, window, pad):
         window +=1
     
     #Median filter
-    #med = medfilt(ETC, window)
     med = mmf(ETC, size=window, mode="nearest")
     # Pad with zeros for same array length
     med = np.concatenate((med, np.zeros(pad)))  
