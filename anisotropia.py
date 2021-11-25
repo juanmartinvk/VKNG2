@@ -2,14 +2,13 @@
 
 # -*- coding: utf-8 -*-
 import acoustical_parameters as ap
-import matplotlib.pyplot as plt
 import soundfile as sf
 import numpy as np
 from scipy.ndimage import median_filter as mmf
 from scipy.optimize import curve_fit
 import dictances as dc
 
-def bhattacharyya_distance(distribution1: "dict", distribution2: "dict",) -> int:
+def bhattacharyya_distance(distribution1, distribution2):
     """ Estimate Bhattacharyya Distance (between General Distributions)
     
     Args:
@@ -22,6 +21,7 @@ def bhattacharyya_distance(distribution1: "dict", distribution2: "dict",) -> int
     sq = 0
     for i in range(len(distribution1)):
         sq  += np.sqrt(distribution1[i]*distribution2[i])
+    print(sq)
     
     return -np.log(sq)
 
@@ -88,7 +88,8 @@ def tex_curves(ETC, fs, f_low):
         actual_EDF = actual_EDF/np.max(actual_EDF)
         
         # Calculate Transition Time 
-        Tt = np.argmin(np.abs(actual_EDF-0.99*np.max(actual_EDF)))/fs
+        Tt_idx = np.argmin(np.abs(actual_EDF-0.99*np.max(actual_EDF)))
+        Tt = Tt_idx/fs
         
         # Compute ideal EDF
         t = np.linspace(0, len(ETC)/fs, len(ETC))
@@ -101,14 +102,19 @@ def tex_curves(ETC, fs, f_low):
         popt, pcov = curve_fit(cap_charge, t, actual_EDF)
         expected_EDF = np.array([cap_charge(x, popt[0]) for x in t])
         
-        return actual_EDF, ideal_EDF, expected_EDF, DCER
+        return actual_EDF, ideal_EDF, expected_EDF, DCER, Tt_idx
     
-def band_texture(actual_EDF, ideal_EDF, expected_EDF):
-        ideal_dic = dict(enumerate(ideal_EDF.flatten(), 1))
-        expected_dic = dict(enumerate(expected_EDF.flatten(), 1))
+def band_texture(actual_EDF, ideal_EDF, expected_EDF, Tt_idx):
+        # ideal_dic = dict(enumerate(ideal_EDF.flatten(), 1))
+        # expected_dic = dict(enumerate(expected_EDF.flatten(), 1))
         
-        DBM_band = dc.bhattacharyya(expected_dic,ideal_dic)
-        # DBM_band = bhattacharyya_distance(expected_dic,ideal_dic)
+        # DBM_band = dc.bhattacharyya(expected_dic,ideal_dic)
+        
+        actual_EDF = actual_EDF[:Tt_idx]
+        ideal_EDF = ideal_EDF[:Tt_idx]
+        expected_EDF = expected_EDF[:Tt_idx]
+        
+        DBM_band = bhattacharyya_distance(expected_EDF,ideal_EDF)
         ETx_band = np.corrcoef(expected_EDF, actual_EDF)[0][1]
         Tx_band = np.corrcoef(ideal_EDF, actual_EDF)[0][1]
         
@@ -144,9 +150,9 @@ def texture(filename, b):
             
             ETC_band = IR_to_filteredETC(IR_raw, fs, f_low, f_high)
             
-            actual_EDF, ideal_EDF, expected_EDF, _ = tex_curves(ETC_band, fs, f_low)
+            actual_EDF, ideal_EDF, expected_EDF, _, Tt_idx = tex_curves(ETC_band, fs, f_low)
             
-            Tx_band, ETx_band, DBM_band = band_texture(actual_EDF, ideal_EDF, expected_EDF)
+            Tx_band, ETx_band, DBM_band = band_texture(actual_EDF, ideal_EDF, expected_EDF, Tt_idx)
             
             ETx.append(ETx_band)
             Tx.append(Tx_band)
@@ -156,16 +162,3 @@ def texture(filename, b):
 
 
 
-# texture = np.cov([expected_EDF, actual_EDF])/(np.std(expected_EDF)* np.std(actual_EDF))
-
-
-# plt.plot(t, ETC_band)
-# plt.plot(ETC_median)
-# plt.plot(10*np.log10(ETC_band))
-# plt.plot(DCER)
-
-# plt.xscale("log")
-
-# plt.plot(t, actual_EDF)
-# plt.plot(t, ideal_EDF)
-# plt.plot(t, expected_EDF)

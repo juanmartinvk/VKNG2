@@ -4,7 +4,6 @@ import acoustical_parameters as ap
 import matplotlib.pyplot as plt
 import soundfile as sf
 import numpy as np
-import time
 import anisotropia as an
 from scipy.ndimage import median_filter as mmf
 
@@ -35,7 +34,7 @@ band = 5
 
 f_low, f_high = ap.limits_iec_61260(band_idx[band], b)
 
-IR_raw, fs = sf.read("sp1_mp1_ir.wav")
+IR_raw, fs = sf.read("IR_test_mono_44.wav")
 
 
 ETC_band = an.IR_to_filteredETC(IR_raw, fs, f_low, f_high)
@@ -43,12 +42,12 @@ ETC_band = an.IR_to_filteredETC(IR_raw, fs, f_low, f_high)
 
 ETC_median = median_filter(ETC_band, fs, 201, 0)
 
-actual_EDF, ideal_EDF, expected_EDF, DCER = an.tex_curves(ETC_band, fs, f_low)
+actual_EDF, ideal_EDF, expected_EDF, DCER, Tt_idx = an.tex_curves(ETC_band, fs, f_low)
 
-Tx, ETx, DBM = an.band_texture(actual_EDF, ideal_EDF, expected_EDF)
+Tx, ETx, DBM = an.band_texture(actual_EDF, ideal_EDF, expected_EDF, Tt_idx)
 
 # Calculate Transition Time 
-Tt = np.argmin(np.abs(actual_EDF-0.99*np.max(actual_EDF)))/fs
+Tt = Tt_idx/fs
 
 print("Tt: "+str(Tt))
 print("Tx: "+str(Tx))
@@ -56,7 +55,7 @@ print("ETx: "+str(ETx))
 print("DBM: "+str(DBM))
 
 
-# after = time.time()
+
 # Median filter
 # decay_band = ap.median_filter(ETC_band, fs, mmf_windows[band], 0)
 
@@ -66,7 +65,7 @@ print("DBM: "+str(DBM))
 
 plt.xscale("log")
 
-# plt.plot(DCER)
+plt.plot(DCER)
 plt.plot(actual_EDF)
 plt.plot(ideal_EDF)
 plt.plot(expected_EDF)
