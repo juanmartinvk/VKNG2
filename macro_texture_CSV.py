@@ -11,7 +11,7 @@ import anisotropia as an
 # =============================================================================
 
 b = 1
-os.chdir("../DATA")
+os.chdir("DATA")
 
 def silentremove(filename):
     try:
@@ -25,7 +25,7 @@ silentremove("Tx.csv")
 silentremove("DBM.csv")
 
 
-filedir = "../WAV AUX"
+filedir = "../WAV"
 
 counter = 0
 for filename in os.listdir(filedir):
@@ -38,12 +38,12 @@ for filename in os.listdir(filedir):
     with open("ETx.csv", 'a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(ETx)
-        # file.write(ETx)
+
     with open("Tx.csv", 'a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(Tx)
-        # file.write(Tx)
+
     with open("DBM.csv", 'a', newline='') as file:
         writer = csv.writer(file)
         writer.writerow(DBM)
-        # file.write(DBM)
+
