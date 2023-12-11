@@ -242,8 +242,9 @@ class DataWindow(QMainWindow):
              self.paramTable.setItem(4, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.C80[idx])))
              self.paramTable.setItem(5, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.Tt[idx])))
              self.paramTable.setItem(6, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.EDTTt[idx])))
+             self.paramTable.setItem(7, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.INR[idx])))
              if self.paramR is not None:
-                 self.paramTable.setItem(7, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.IACCe[idx])))
+                 self.paramTable.setItem(8, idx, QtWidgets.QTableWidgetItem(str(self.currentParam.IACCe[idx])))
              self.paramTable.setColumnWidth(idx,column_width)
              
     def plotData(self):
@@ -322,7 +323,9 @@ class DataWindow(QMainWindow):
         C80 = list(self.currentParam.C80)
         Tt = list(self.currentParam.Tt)
         EDTTt = list(self.currentParam.EDTTt)
+        INR = list(self.currentParam.INR)
         IACCe = list(self.currentParam.IACCe)
+
         
         # Add row index
         f.insert(0, "f [Hz]")
@@ -333,18 +336,20 @@ class DataWindow(QMainWindow):
         C80.insert(0, "C80 [dB]")
         Tt.insert(0, "Tt [s]")
         EDTTt.insert(0, "EDTTt [s]")
+        INR.insert(0, "INR")
         IACCe.insert(0, "IACCe")
+
         
         # Write CSV
         with open(filename, 'w', newline='') as file:
             writer = csv.writer(file)
-            writer.writerows([f, EDT, T20, T30, C50, C80, Tt, EDTTt])
+            writer.writerows([f, EDT, T20, T30, C50, C80, Tt, EDTTt, INR])
             if self.paramR is not None:
                 writer.writerow(IACCe)
         
         # If XLSX selected, convert CSV to Excel
         if filename[-5:] == '.xlsx':
-            columns = ["EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]", "Tt [s]", "EDTTt [s]"]
+            columns = ["EDT [s]", "T20 [s]", "T30 [s]", "C50 [dB]", "C80 [dB]", "Tt [s]", "EDTTt [s]", "INR [dB]"]
             if self.paramR is not None:
                 columns.append("IACCe")
             xlsx = pd.read_csv(filename)

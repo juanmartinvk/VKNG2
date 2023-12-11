@@ -6,6 +6,7 @@ from scipy.signal import butter, sosfilt, correlate, fftconvolve
 from scipy.stats import linregress
 from scipy.ndimage import median_filter as mmf
 
+
 class AcParam:
 # =============================================================================
 #   An object of the AcParam class contains attributes related to the acoustical
@@ -27,6 +28,8 @@ class AcParam:
         self.C80 = []
         self.Tt = []
         self.EDTTt = []
+        self.INR = []
+        self.noise = []
         self.IACCe = []
         self.b = 1
         self.crossing_point = []
@@ -37,7 +40,7 @@ class AcParam:
 
 
 
-def analyzeFile(impulsePath, filterPath, b, f_lim=(20, 20000), truncate=None, smoothing="schroeder", median_window=20):
+def analyzeFile(impulsePath, filterPath, b, f_lim=(20, 20000), truncate="lundeby", smoothing="schroeder", median_window=20):
     '''
     Reads a mono or stereo Impulse Response file and returns mono and stereo 
     acoustical parameters. The audio file can be input as an IR signal, or as a
@@ -57,8 +60,8 @@ def analyzeFile(impulsePath, filterPath, b, f_lim=(20, 20000), truncate=None, sm
         Frequency limits (bandwidth) of the analyzed signal in Hz. Default is 
         (20, 20000).
     truncate : str, optional
-        IR truncation method. Default is None for no truncation. Use 'lundeby' for
-        truncation by Lundeby's method.
+        IR truncation method. Use 'lundeby' for
+        truncation by Lundeby's method. Use None for no truncation
     smoothing : str, optional
         ETC smoothing method. Default is 'schroeder' for Schroeder's Reverse
         Integration. Use 'median' for moving median filter.
@@ -148,12 +151,29 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     
     # Initialize object of the AcParam class
     param = AcParam()
+
+
+    #Band limits
+    f_low = f_lim[0]
+    f_high = f_lim[1]
     
-    #Start at peak of impulse
-    IR_raw = IR_raw[np.argmax(IR_raw):]
-    
-    #Trim
+    #Trim to one second before peak
+    peak_idx = np.argmax(np.abs(IR_raw))
+    if peak_idx > fs:
+        IR_raw = IR_raw[peak_idx-fs:]
+        
+    #Trim end of impulse after 2 seconds of steady noise floor
     IR_raw = trim_impulse(IR_raw, fs)
+    
+    #Apply bandpass filter
+    IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
+    
+    #Trim to start at peak of impulse
+    peak_idx = np.argmax(np.abs(IR_filtered))
+    IR_filtered = IR_filtered[peak_idx:]
+    
+
+    
     
     mmf_factor = median_window
     
@@ -207,11 +227,7 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     
     # Full range parameters
     
-    #Band limits
-    f_low = f_lim[0]
-    f_high = f_lim[1]
-    #Apply bandpass filter
-    IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
+
     
     #Trim last 5 percent of signal to minimize filter edge effect
     IR_filtered = IR_filtered[:round(len(IR_filtered)*0.95)]
@@ -250,6 +266,17 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         print('invalid smoothing')
 
     
+
+    #Calculate parameters:
+    EDT_band = EDT_from_IR(decay_band, fs)
+    T20_band = T20_from_IR(decay_band, fs)
+    T30_band = T30_from_IR(decay_band, fs)
+    C50_band = C50_from_IR(fs, ETC_band)
+    C80_band = C80_from_IR(fs, ETC_band)
+    Tt_band = Tt_from_IR(ETC_truncated_band, fs, f_low)
+    EDTTt_band = EDTTt_from_IR(decay_band, Tt_band, fs)
+    INR_band, noise_band = INR(ETC_band, T30_band, crossing_point_band)
+
     #Append parameters to lists
     param.IR_filtered.append(IR_filtered)
     param.crossing_point.append(crossing_point_band)
@@ -257,14 +284,16 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     param.ETC_dB.append(ETC_dB_band)
     param.ETC_avg_dB.append(ETC_avg_dB_band)     
     param.decay.append(decay_band)
-    param.EDT.append(EDT_from_IR(decay_band, fs))
-    param.T20.append(T20_from_IR(decay_band, fs))
-    param.T30.append(T30_from_IR(decay_band, fs))
-    param.C50.append(C50_from_IR(fs, ETC_band))
-    param.C80.append(C80_from_IR(fs, ETC_band))
-    param.Tt.append(Tt_from_IR(ETC_truncated_band, fs, f_low))
-    param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
-    # param.EDTTt.append(EDTTt_from_IR(decay_band, 0.2, fs))
+    param.EDT.append(EDT_band)
+    param.T20.append(T20_band)
+    param.T30.append(T30_band)
+    param.C50.append(C50_band)
+    param.C80.append(C80_band)
+    param.Tt.append(Tt_band)
+    param.EDTTt.append(EDTTt_band)
+    param.noise.append(noise_band)
+    param.INR.append(INR_band)
+
 
     
     # Band-filtered parameters
@@ -276,6 +305,10 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         f_high = band_lim[counter][1]
         #Apply bandpass filter
         IR_filtered = bandpass(IR_raw, f_low, f_high, fs)
+        
+        #Trim to start at peak of impulse
+        # peak_idx = np.argmax(np.abs(IR_filtered))
+        IR_filtered = IR_filtered[peak_idx:]
         
         #Trim last 5 percent of signal to minimize filter edge effect
         IR_filtered = IR_filtered[:round(len(IR_filtered)*0.95)]
@@ -313,6 +346,17 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
             print('invalid smoothing')
 
         
+        #Calculate parameters:
+        EDT_band = EDT_from_IR(decay_band, fs)
+        T20_band = T20_from_IR(decay_band, fs)
+        T30_band = T30_from_IR(decay_band, fs)
+        C50_band = C50_from_IR(fs, ETC_band)
+        C80_band = C80_from_IR(fs, ETC_band)
+        Tt_band = Tt_from_IR(ETC_truncated_band, fs, f_low)
+        EDTTt_band = EDTTt_from_IR(decay_band, Tt_band, fs)
+        # INR_band = INR(ETC_truncated_band, (T20_band + T30_band)/2)
+        INR_band, noise_band = INR(ETC_band, T30_band, crossing_point_band)
+    
         #Append parameters to lists
         param.IR_filtered.append(IR_filtered)
         param.crossing_point.append(crossing_point_band)
@@ -320,14 +364,15 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
         param.ETC_dB.append(ETC_dB_band)
         param.ETC_avg_dB.append(ETC_avg_dB_band)     
         param.decay.append(decay_band)
-        param.EDT.append(EDT_from_IR(decay_band, fs))
-        param.T20.append(T20_from_IR(decay_band, fs))
-        param.T30.append(T30_from_IR(decay_band, fs))
-        param.C50.append(C50_from_IR(fs, ETC_band))
-        param.C80.append(C80_from_IR(fs, ETC_band))
-        param.Tt.append(Tt_from_IR(ETC_truncated_band, fs, f_low))
-        param.EDTTt.append(EDTTt_from_IR(decay_band, param.Tt[-1], fs))
-        # param.EDTTt.append(EDTTt_from_IR(decay_band, 0.2, fs))
+        param.EDT.append(EDT_band)
+        param.T20.append(T20_band)
+        param.T30.append(T30_band)
+        param.C50.append(C50_band)
+        param.C80.append(C80_band)
+        param.Tt.append(Tt_band)
+        param.EDTTt.append(EDTTt_band)
+        param.noise.append(noise_band)
+        param.INR.append(INR_band)
         
         counter += 1
     
@@ -340,6 +385,8 @@ def parameters(IR_raw, fs, b=1, f_lim=(20, 20000), truncate=None, smoothing='sch
     param.C80 = np.round(param.C80, 2)
     param.Tt = np.round(param.Tt, 2)
     param.EDTTt = np.round(param.EDTTt, 2)
+    param.INR = np.round(param.INR, 2)
+    param.noise = np.round(param.noise, 2)
     
     #Add fs and time axis to param
     param.fs = fs
@@ -720,6 +767,32 @@ def EDTTt_from_IR(decay, Tt, fs):
     
     return EDTTt
 
+def INR(ETC, T60, crossing_point):
+    
+    
+    #Estimate noise level based on last 10% of the signal
+    idx_last_10percent = -int(ETC.size/10)
+    Ln = 10 * np.log10(np.mean(ETC[idx_last_10percent:]) )
+    
+    #Truncate for noise compensation
+    ETC = ETC[:crossing_point]
+    
+    #Schroeder integration
+    sch = np.cumsum(ETC[::-1])[::-1]
+    
+    #Logarithmic scale
+    sch = 10 * np.log10(sch)
+    
+    #Normalize
+    sch /= np.max(sch)
+    
+    #Calculate Lir
+    Lir = sch[0] + 10 * np.log10(6 * np.log(10) / T60)
+    
+    #Calculate INR
+    INR = Lir - Ln
+    
+    return INR, Ln
 
 def bandpass(IR, f_low, f_high, fs):
     '''
@@ -1029,7 +1102,9 @@ def schroeder(ETC, pad):
     sch = np.concatenate((sch, np.zeros(pad)))  
     # dB scale, normalize
     with np.errstate(divide='ignore'): #ignore divide by zero warning
-        sch = 10.0 * np.log10(sch / np.max(sch))
+        sch = sch / np.max(sch)
+        sch = 10.0 * np.log10(sch)
+
 
     return sch
 
@@ -1088,8 +1163,16 @@ def moving_average(ETC, window):
         Averaged ETC.
 
     '''
+    
+    
     ETC_padded = np.pad(ETC, (window//2, window-1-window//2), mode='edge') #Pad with edge values
     ETC_averaged = np.convolve(ETC_padded, np.ones((window,))/window, mode='valid') #Moving average filter
+    
+    
+    ETC_averaged[0]=ETC[0]
+    for i in range(1, window):
+        ETC_averaged[i] = np.mean(ETC[0:i])
+    
 
     return ETC_averaged
 
@@ -1115,17 +1198,21 @@ def trim_impulse(IR, fs, mode='IR'):
     '''
     # Trim zeros
     IR = np.trim_zeros(IR)
+    
+    peak_idx = np.argmax(np.abs(IR))
+    IR_trim = IR[peak_idx:]
+    
     #Average response and dB
     with np.errstate(divide='ignore'): #Ignore divide by zero warning
         if mode == 'IR':
-            ETC_dB = 10 * np.log10(moving_average(IR**2, 500))
+            ETC_dB = 10 * np.log10(moving_average(IR_trim**2, 500))
         elif mode == 'ETC':
-            ETC_dB = 10 * np.log10(moving_average(IR, 500))
+            ETC_dB = 10 * np.log10(moving_average(IR_trim, 500))
     
     # Define chunk size
     chunk_t = 0.5
     chunk_samples = int(chunk_t * fs)
-    chunk_num = int(IR.size // chunk_samples) #Number of whole chunks in IR
+    chunk_num = int(IR_trim.size // chunk_samples) #Number of whole chunks in IR
     
     # Exception for very short IR
     if chunk_num <= 3:
@@ -1143,7 +1230,7 @@ def trim_impulse(IR, fs, mode='IR'):
         mean_old = mean_new
         
         if same_counter == 4:
-            return IR[:(i-1)*chunk_samples]
+            return IR[:(i-1)*chunk_samples + peak_idx]
         
         start = i * chunk_samples
         stop = (i + 2) * chunk_samples
@@ -1151,7 +1238,7 @@ def trim_impulse(IR, fs, mode='IR'):
         
         #Exception for bumps
         if mean_new > mean_old + 3:
-            return IR[:(i-1)*chunk_samples]
+            return IR[:(i-1)*chunk_samples + peak_idx]
         
         #If within 3 dB of the previous chunk, add 1 to counter. If not, reset.
         if mean_new > mean_old - 3:

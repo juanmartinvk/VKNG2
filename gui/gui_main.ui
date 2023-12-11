@@ -60,6 +60,11 @@
     </row>
     <row>
      <property name="text">
+      <string>INR [dB]</string>
+     </property>
+    </row>
+    <row>
+     <property name="text">
       <string>IACCe</string>
      </property>
     </row>
@@ -120,7 +125,7 @@
      <x>0</x>
      <y>0</y>
      <width>845</width>
-     <height>26</height>
+     <height>21</height>
     </rect>
    </property>
   </widget>
